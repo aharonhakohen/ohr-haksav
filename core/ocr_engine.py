@@ -9,7 +9,10 @@ import os
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Callable, Optional
+import cv2
+import numpy as np
 from PIL import Image, ImageEnhance, ImageOps
+
 
 class OCREngine:
     def __init__(self, model_dir: Optional[str] = None):
@@ -60,7 +63,65 @@ class OCREngine:
     def is_ready(self) -> bool:
         return self._is_loaded and self._recognizer is not None
 
-    def preprocess_image(self, img: Image.Image, enhance_contrast: bool = True) -> Image.Image:
+    def crop_document_if_desk(self, img: Image.Image) -> Image.Image:
+        """
+        Detects if an image is a page photographed on a darker table/desk background,
+        and if so, automatically crops to the document boundaries so desk borders
+        do not distort line segmentation and OCR.
+        """
+        try:
+            arr = np.array(img.convert("RGB"))
+            gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+            h, w = gray.shape
+
+            # Fast downscale for boundary detection
+            scale = 800.0 / max(h, w) if max(h, w) > 800 else 1.0
+            if scale < 1.0:
+                small_gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+            else:
+                small_gray = gray
+
+            sh, sw = small_gray.shape
+            small_area = sh * sw
+
+            # Measure perimeter brightness vs center brightness
+            border_thickness = max(2, int(min(sh, sw) * 0.03))
+            top = small_gray[:border_thickness, :]
+            bottom = small_gray[-border_thickness:, :]
+            left = small_gray[:, :border_thickness]
+            right = small_gray[:, -border_thickness:]
+            border_pixels = np.concatenate([top.ravel(), bottom.ravel(), left.ravel(), right.ravel()])
+            border_mean = float(np.mean(border_pixels))
+            center_mean = float(np.mean(small_gray[int(sh * 0.25) : int(sh * 0.75), int(sw * 0.25) : int(sw * 0.75)]))
+
+            # If center (white paper) is substantially brighter than the perimeter (dark table)
+            if center_mean - border_mean > 25.0:
+                blurred = cv2.GaussianBlur(small_gray, (5, 5), 0)
+                split_thresh = int(border_mean + (center_mean - border_mean) * 0.4)
+                _, thresh = cv2.threshold(blurred, split_thresh, 255, cv2.THRESH_BINARY)
+
+                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+                thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+                contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if contours:
+                    largest = max(contours, key=cv2.contourArea)
+                    c_area = cv2.contourArea(largest)
+                    if c_area > 0.20 * small_area:
+                        x, y, cw, ch = cv2.boundingRect(largest)
+                        pad_x = int((cw / scale) * 0.015)
+                        pad_y = int((ch / scale) * 0.015)
+                        orig_x = max(0, int(x / scale) - pad_x)
+                        orig_y = max(0, int(y / scale) - pad_y)
+                        orig_w = min(w - orig_x, int(cw / scale) + 2 * pad_x)
+                        orig_h = min(h - orig_y, int(ch / scale) + 2 * pad_y)
+                        if orig_w > 0.3 * w and orig_h > 0.3 * h:
+                            return img.crop((orig_x, orig_y, orig_x + orig_w, orig_y + orig_h))
+        except Exception:
+            pass  # Fallback to uncropped image on any error
+        return img
+
+    def preprocess_image(self, img: Image.Image, enhance_contrast: bool = True, auto_crop_desk: bool = True) -> Image.Image:
         """Cleans and standardizes image for optimal Hebrew handwriting recognition."""
         # Convert to RGB
         if img.mode != "RGB":
@@ -68,6 +129,10 @@ class OCREngine:
 
         # Automatically handle EXIF orientation
         img = ImageOps.exif_transpose(img)
+
+        # Automatically crop dark table/desk margins if document is resting on a desk
+        if auto_crop_desk:
+            img = self.crop_document_if_desk(img)
 
         # Enhance contrast for faint pencil/ballpoint pen
         if enhance_contrast:
@@ -107,23 +172,42 @@ class OCREngine:
         if progress_callback:
             progress_callback(10, 100, "Segmenting handwriting lines...")
 
-        # Run Mishkefet read_page
+        # Run Mishkefet read_page: returns (page_transcript_str, line_records_list)
         raw_results = self._recognizer.read_page(img)
 
-        total_lines = len(raw_results)
+        if isinstance(raw_results, tuple) and len(raw_results) == 2:
+            page_transcript, line_records = raw_results
+        elif isinstance(raw_results, list):
+            line_records = raw_results
+            page_transcript = ""
+        else:
+            line_records = [raw_results]
+            page_transcript = ""
+
+        total_lines = len(line_records)
         lines_data = []
         full_text_lines = []
         total_corrections = 0
 
-        for idx, line_item in enumerate(raw_results):
+        for idx, line_item in enumerate(line_records):
             if progress_callback:
                 pct = 20 + int((idx / max(1, total_lines)) * 75)
                 progress_callback(pct, 100, f"Reading line {idx + 1} of {total_lines}...")
 
-            raw_line_text = getattr(line_item, 'text', str(line_item)).strip()
-            confidence = getattr(line_item, 'confidence', 1.0)
-            box = getattr(line_item, 'box', None)
-            skew = getattr(line_item, 'skew', 0.0)
+            if isinstance(line_item, dict):
+                raw_line_text = str(line_item.get('text', '')).strip()
+                confidence = float(line_item.get('confidence', 1.0))
+                box = line_item.get('box', None)
+                skew = float(line_item.get('skew', 0.0))
+            else:
+                raw_line_text = getattr(line_item, 'text', str(line_item)).strip()
+                confidence = getattr(line_item, 'confidence', 1.0)
+                box = getattr(line_item, 'box', None)
+                skew = getattr(line_item, 'skew', 0.0)
+
+            # Never output raw dictionary structures, python metadata, or empty strings
+            if not raw_line_text or raw_line_text.startswith("{'text'") or raw_line_text.startswith("[{'text'"):
+                continue
 
             # Apply learning engine corrections if provided
             if learning_engine:
@@ -134,7 +218,7 @@ class OCREngine:
                 applied = []
 
             lines_data.append({
-                'index': idx,
+                'index': len(lines_data),
                 'text': clean_text,
                 'raw_text': raw_line_text,
                 'confidence': confidence,
