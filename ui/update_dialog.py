@@ -5,6 +5,7 @@ Supports checking for updates via:
   1. Official GitHub Cloud (https://raw.githubusercontent.com/.../version.json)
   2. Local Network Share / Windows Server Domain Share / USB / Offline folder
      (e.g. \\newltcserver\Installs\OhrHaKsav or M:\My Drive\... containing version.json & OhrHaKsav_Setup.exe)
+Includes one-click in-app background download and installation of updates.
 """
 
 import os
@@ -12,6 +13,7 @@ import sys
 import json
 import urllib.request
 import subprocess
+import tempfile
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QProgressBar, QTextBrowser, QRadioButton, QButtonGroup,
@@ -38,9 +40,9 @@ def get_current_app_version() -> str:
     vpath = get_resource_path("version.json")
     try:
         with open(vpath, "r", encoding="utf-8") as f:
-            return json.load(f).get("version", "1.3.1")
+            return json.load(f).get("version", "1.3.2")
     except Exception:
-        return "1.3.1"
+        return "1.3.2"
 
 
 def parse_version_tuple(v_str: str) -> tuple:
@@ -58,6 +60,73 @@ def parse_version_tuple(v_str: str) -> tuple:
     while len(parts) < 3:
         parts.append(0)
     return tuple(parts[:3])
+
+
+class DownloadWorker(QThread):
+    progress = pyqtSignal(int, int, int)  # cur_bytes, tot_bytes, percent
+    finished = pyqtSignal(str)           # downloaded_dest_path
+    error = pyqtSignal(str)              # error_msg
+
+    def __init__(self, download_url: str, version: str, fallback_url: str = ""):
+        super().__init__()
+        self.download_url = download_url
+        self.version = version
+        self.fallback_url = fallback_url
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+
+    def run(self):
+        temp_dir = tempfile.gettempdir()
+        dest_path = os.path.join(temp_dir, f"OhrHaKsav_Setup_v{self.version}.exe")
+        urls_to_try = [self.download_url]
+        if self.fallback_url and self.fallback_url not in urls_to_try:
+            urls_to_try.append(self.fallback_url)
+
+        last_err = None
+        for url in urls_to_try:
+            if self._is_cancelled:
+                return
+            try:
+                req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "OhrHaKsav-Updater/1.3"}
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    tot_bytes = int(resp.headers.get("Content-Length", 0))
+                    cur_bytes = 0
+                    chunk_size = 1024 * 128  # 128 KB chunks
+
+                    with open(dest_path, "wb") as f:
+                        while not self._is_cancelled:
+                            chunk = resp.read(chunk_size)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            cur_bytes += len(chunk)
+                            pct = int((cur_bytes / max(1, tot_bytes)) * 100) if tot_bytes > 0 else 0
+                            self.progress.emit(cur_bytes, tot_bytes, pct)
+
+                    if self._is_cancelled:
+                        if os.path.exists(dest_path):
+                            try:
+                                os.remove(dest_path)
+                            except Exception:
+                                pass
+                        return
+
+                # Download succeeded
+                self.finished.emit(dest_path)
+                return
+            except Exception as err:
+                last_err = err
+                continue
+
+        if last_err:
+            self.error.emit(str(last_err))
+        else:
+            self.error.emit("Failed to download setup installer.")
 
 
 class CheckUpdateWorker(QThread):
@@ -152,10 +221,11 @@ class UpdateDialog(QDialog):
         super().__init__(parent)
         self.current_version = get_current_app_version()
         self.worker = None
+        self.download_worker = None
         self.latest_data = {}
         self.setWindowTitle(t("update_dialog_title"))
-        self.resize(620, 480)
-        self.setMinimumSize(560, 420)
+        self.resize(640, 500)
+        self.setMinimumSize(560, 440)
 
         # Icon
         icon_path = get_resource_path(os.path.join("assets", "ohr_haksav.ico"))
@@ -182,6 +252,12 @@ class UpdateDialog(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         self.center_on_screen()
+
+    def closeEvent(self, event):
+        if self.download_worker and self.download_worker.isRunning():
+            self.download_worker.cancel()
+            self.download_worker.wait(1000)
+        event.accept()
 
     def _load_settings(self):
         self.source_type = "online"
@@ -311,7 +387,6 @@ class UpdateDialog(QDialog):
 
         # Progress / Status indicator
         self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)  # indeterminate spinner
         self.progress_bar.setFixedHeight(12)
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
@@ -339,12 +414,33 @@ class UpdateDialog(QDialog):
         self.action_box = QHBoxLayout()
         self.action_box.setSpacing(10)
 
-        self.btn_install_local = QPushButton(t("update_btn_run_installer"))
-        self.btn_install_local.setObjectName("btn_success")
-        self.btn_install_local.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 7px 16px;")
-        self.btn_install_local.setVisible(False)
-        self.btn_install_local.clicked.connect(self._run_local_installer)
-        self.action_box.addWidget(self.btn_install_local)
+        # Prominent "Install Now" button
+        self.btn_install_now = QPushButton(t("update_btn_install_now"))
+        self.btn_install_now.setObjectName("btn_install_now")
+        self.btn_install_now.setStyleSheet("""
+            QPushButton#btn_install_now {
+                background-color: #059669;
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 8px 22px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton#btn_install_now:hover {
+                background-color: #047857;
+            }
+            QPushButton#btn_install_now:pressed {
+                background-color: #065f46;
+            }
+            QPushButton#btn_install_now:disabled {
+                background-color: #94a3b8;
+                color: #f1f5f9;
+            }
+        """)
+        self.btn_install_now.setVisible(False)
+        self.btn_install_now.clicked.connect(self._handle_install_now)
+        self.action_box.addWidget(self.btn_install_now)
 
         self.btn_open_folder = QPushButton(t("update_btn_open_folder"))
         self.btn_open_folder.setVisible(False)
@@ -353,7 +449,19 @@ class UpdateDialog(QDialog):
 
         self.btn_open_web = QPushButton(t("update_btn_open_web"))
         self.btn_open_web.setObjectName("btn_primary")
-        self.btn_open_web.setStyleSheet("background-color: #2563eb; color: white; font-weight: bold; padding: 7px 16px;")
+        self.btn_open_web.setStyleSheet("""
+            QPushButton#btn_primary {
+                background-color: #2563eb;
+                color: white;
+                font-weight: bold;
+                padding: 8px 16px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton#btn_primary:hover {
+                background-color: #1d4ed8;
+            }
+        """)
         self.btn_open_web.setVisible(False)
         self.btn_open_web.clicked.connect(self._open_web_release)
         self.action_box.addWidget(self.btn_open_web)
@@ -398,7 +506,7 @@ class UpdateDialog(QDialog):
         folder_box = QHBoxLayout()
         folder_box.setContentsMargins(22, 0, 0, 0)
         self.txt_local_path = QLineEdit(self.source_local_path)
-        self.txt_local_path.setPlaceholderText(r"e.g. \\newltcserver\Installs\OhrHaKsav or M:\My Drive\...")
+        self.txt_local_path.setPlaceholderText(r"\newltcserver\Installs\OhrHaKsav or M:\My Drive\...")
         folder_box.addWidget(self.txt_local_path)
 
         btn_browse = QPushButton(t("update_folder_browse_btn"))
@@ -406,7 +514,7 @@ class UpdateDialog(QDialog):
         folder_box.addWidget(btn_browse)
         layout.addLayout(folder_box)
 
-        # Select current radio
+        # Sync radios
         if self.source_type == "local":
             self.rad_local.setChecked(True)
         else:
@@ -415,51 +523,47 @@ class UpdateDialog(QDialog):
         layout.addSpacing(10)
 
         # Save Button
-        save_box = QHBoxLayout()
-        self.btn_save_settings = QPushButton(t("update_save_settings_btn"))
-        self.btn_save_settings.setStyleSheet("background-color: #2563eb; color: white; font-weight: 600; padding: 7px 18px;")
-        self.btn_save_settings.clicked.connect(self._apply_settings_and_check)
-        save_box.addWidget(self.btn_save_settings)
-        save_box.addStretch()
-        layout.addLayout(save_box)
+        btn_save = QPushButton(t("update_save_settings_btn"))
+        btn_save.setObjectName("btn_primary")
+        btn_save.setStyleSheet("background-color: #2563eb; color: white; font-weight: bold; padding: 8px 16px; border-radius: 6px; border: none;")
+        btn_save.clicked.connect(self._save_and_recheck)
+        layout.addWidget(btn_save)
 
         layout.addStretch()
 
-    def _get_source_display_name(self) -> str:
-        if self.source_type == "local":
-            path = self.source_local_path or "Local Folder"
-            return f"Local / Network: {os.path.basename(path) or path}"
-        return "GitHub Cloud"
-
     def _browse_local_folder(self):
-        chosen = QFileDialog.getExistingDirectory(
-            self,
-            t("update_source_local"),
-            self.txt_local_path.text() or os.path.expanduser("~")
-        )
-        if chosen:
-            self.txt_local_path.setText(chosen)
+        folder = QFileDialog.getExistingDirectory(self, "Select Network Share or Folder", self.txt_local_path.text())
+        if folder:
+            self.txt_local_path.setText(folder)
+            self.rad_local.setChecked(True)
 
-    def _apply_settings_and_check(self):
+    def _save_and_recheck(self):
         self.source_type = "local" if self.rad_local.isChecked() else "online"
         self.source_local_path = self.txt_local_path.text().strip()
         self._save_settings()
-
         self.tabs.setCurrentIndex(0)
         self._start_check()
+
+    def _get_source_display_name(self) -> str:
+        if self.source_type == "local":
+            path = self.source_local_path or "Not configured"
+            return f"Local / Network Share ({path})"
+        return "GitHub Cloud"
 
     def _start_check(self):
         if self.worker and self.worker.isRunning():
             return
 
-        self.progress_bar.setVisible(True)
-        self.lbl_status.setText(t("update_checking_msg", source=self._get_source_display_name()))
-        self.lbl_status.setStyleSheet("font-size: 13px; font-weight: 500; color: #2563eb;")
-        self.browser_details.setHtml("")
         self.btn_check_again.setEnabled(False)
-        self.btn_install_local.setVisible(False)
+        self.btn_install_now.setVisible(False)
         self.btn_open_folder.setVisible(False)
         self.btn_open_web.setVisible(False)
+
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)  # indeterminate spinner
+        self.lbl_status.setText(t("update_checking_msg", source=self._get_source_display_name()))
+        self.lbl_status.setStyleSheet("font-size: 13px; font-weight: 500; color: #2563eb;")
+        self.browser_details.clear()
 
         source_path = self.source_local_path if self.source_type == "local" else self.source_online_url
         self.worker = CheckUpdateWorker(self.source_type, source_path, self.current_version)
@@ -496,10 +600,13 @@ class UpdateDialog(QDialog):
             html += "</ul></div>"
             self.browser_details.setHtml(html)
 
-            # Show appropriate action buttons
+            # Prominent Install Now button
+            self.btn_install_now.setText(t("update_btn_install_now"))
+            self.btn_install_now.setEnabled(True)
+            self.btn_install_now.setVisible(True)
+
             local_setup = data.get("_local_setup_path", "")
             if local_setup and os.path.exists(local_setup):
-                self.btn_install_local.setVisible(True)
                 self.btn_open_folder.setVisible(True)
             else:
                 if self.source_type == "local":
@@ -522,6 +629,19 @@ class UpdateDialog(QDialog):
             html += "</ul></div>"
             self.browser_details.setHtml(html)
 
+            # Also offer Reinstall / Repair option
+            self.btn_install_now.setText(t("update_btn_reinstall"))
+            self.btn_install_now.setEnabled(True)
+            self.btn_install_now.setVisible(True)
+
+            local_setup = data.get("_local_setup_path", "")
+            if local_setup and os.path.exists(local_setup):
+                self.btn_open_folder.setVisible(True)
+            else:
+                if self.source_type == "local":
+                    self.btn_open_folder.setVisible(True)
+                self.btn_open_web.setVisible(True)
+
     def _on_check_failed(self, err_msg: str):
         self.progress_bar.setVisible(False)
         self.btn_check_again.setEnabled(True)
@@ -539,10 +659,94 @@ class UpdateDialog(QDialog):
         """
         self.browser_details.setHtml(html)
 
-    def _run_local_installer(self):
-        setup_exe = self.latest_data.get("_local_setup_path", "")
+    def _handle_install_now(self):
+        if self.download_worker and self.download_worker.isRunning():
+            return
+
+        # 1. Local setup executable available
+        local_setup = self.latest_data.get("_local_setup_path", "")
+        if local_setup and os.path.exists(local_setup):
+            self._run_local_installer(local_setup)
+            return
+
+        if self.source_type == "local" and self.source_local_path:
+            cand = os.path.join(self.source_local_path, "OhrHaKsav_Setup.exe")
+            if os.path.exists(cand):
+                self._run_local_installer(cand)
+                return
+
+        # 2. Online GitHub download and install
+        remote_ver = str(self.latest_data.get("version", self.current_version)).lstrip("vV")
+        download_url = f"https://github.com/aharonhakohen/ohr-haksav/releases/download/v{remote_ver}/OhrHaKsav_Setup.exe"
+        fallback_url = "https://github.com/aharonhakohen/ohr-haksav/releases/latest/download/OhrHaKsav_Setup.exe"
+
+        self.btn_install_now.setEnabled(False)
+        self.btn_install_now.setText(t("update_btn_downloading", pct=0))
+        self.btn_check_again.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.lbl_status.setText(t("update_downloading_status", cur_mb=0.0, tot_mb=0.0, pct=0))
+        self.lbl_status.setStyleSheet("font-size: 13px; font-weight: bold; color: #2563eb;")
+
+        self.download_worker = DownloadWorker(download_url, remote_ver, fallback_url=fallback_url)
+        self.download_worker.progress.connect(self._on_download_progress)
+        self.download_worker.finished.connect(self._on_download_finished)
+        self.download_worker.error.connect(self._on_download_error)
+        self.download_worker.start()
+
+    def _on_download_progress(self, cur_bytes: int, tot_bytes: int, pct: int):
+        cur_mb = cur_bytes / (1024 * 1024)
+        tot_mb = tot_bytes / (1024 * 1024)
+        self.progress_bar.setValue(pct)
+        self.lbl_status.setText(t("update_downloading_status", cur_mb=cur_mb, tot_mb=tot_mb, pct=pct))
+        self.btn_install_now.setText(t("update_btn_downloading", pct=pct))
+
+    def _on_download_finished(self, dest_path: str):
+        self.progress_bar.setVisible(False)
+        self.btn_check_again.setEnabled(True)
+        self.btn_install_now.setEnabled(True)
+        self.btn_install_now.setText(t("update_btn_install_now"))
+        self.lbl_status.setText(t("update_download_complete"))
+        self.lbl_status.setStyleSheet("font-size: 14px; font-weight: bold; color: #059669;")
+
+        remote_ver = self.latest_data.get("version", self.current_version)
+        reply = QMessageBox.question(
+            self,
+            t("update_download_prompt_title"),
+            t("update_download_prompt_msg", version=remote_ver),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+
+        # Launch the setup wizard
+        subprocess.Popen([dest_path], shell=True)
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Exit so files can be replaced without lock conflicts
+            QApplication.quit()
+        else:
+            self.accept()
+
+    def _on_download_error(self, err_msg: str):
+        self.progress_bar.setVisible(False)
+        self.btn_check_again.setEnabled(True)
+        self.btn_install_now.setEnabled(True)
+        self.btn_install_now.setText(t("update_btn_install_now"))
+        self.lbl_status.setText(t("update_err_hdr"))
+        self.lbl_status.setStyleSheet("font-size: 14px; font-weight: bold; color: #dc2626;")
+
+        QMessageBox.warning(
+            self,
+            t("update_err_hdr"),
+            f"Failed to download update automatically:\n" + str(err_msg) + "\n\nYou can click 'Open Release on GitHub' to download manually."
+        )
+
+    def _run_local_installer(self, setup_exe: str = ""):
+        if not setup_exe:
+            setup_exe = self.latest_data.get("_local_setup_path", "")
         if not setup_exe or not os.path.exists(setup_exe):
-            QMessageBox.warning(self, "Setup Not Found", f"OhrHaKsav_Setup.exe was not found in: {self.latest_data.get('_source_folder', '')}")
+            QMessageBox.warning(self, "Setup Not Found", f"OhrHaKsav_Setup.exe was not found in: {self.latest_data.get('_source_folder', self.source_local_path)}")
             return
 
         reply = QMessageBox.question(

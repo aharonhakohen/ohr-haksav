@@ -3,15 +3,15 @@
   "appNameHebrew": "אור הכתב",
   "tagline": "Offline Torah Notes & Hebrew Handwriting OCR Studio",
   "taglineHebrew": "סטודיו אופליין לזיהוי ועריכת כתב יד תורני ומחברות שיעורים",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "releaseDate": "2026-11-08",
-  "releaseTitle": "v1.3.1 — Fix OCR Metadata Leak & Enhanced Lined Notebook Page Segmentation",
-  "description": "Ohr HaKsav (אור הכתב) v1.3.1 eliminates the raw Python dictionary metadata leak in the proofreading editor, introduces automatic desk background cropping for smartphone photos, upgrades line pitch estimation for ruled loose-leaf paper, and widens horizontal word merging so Hebrew notes are transcribed as complete lines rather than isolated letters.",
+  "releaseTitle": "v1.3.2 — One-Click 'Install Now' In-App Updater & OCR Segmentation Reliability",
+  "description": "Ohr HaKsav (אור הכתב) v1.3.2 adds a prominent one-click 'Install Update Now' button directly inside the Check for Updates modal, enabling seamless in-app background downloading and automated execution of updates without manual browsing.",
   "features": [
-    "Eliminated OCR Metadata Leak: Fixed return tuple handling in the OCR engine so Python dictionary dumps ([{'text': ..., 'confidence': ...}]) are never appended to transcripts.",
-    "Automatic Desk Background Cropping: Automatically detects white paper resting on dark wooden desks or tables, trimming distracting table borders before line segmentation runs.",
-    "Robust Line Pitch Estimation: Enforces realistic line spacing boundaries (12 to 55 lines per page), preventing ruled notebook guide lines and hole-punch margins from falsely collapsing the line pitch into micro-stroke noise.",
-    "Enhanced Horizontal Word Merging: Widened horizontal smear and component merging thresholds to group Hebrew words across the entire page width into continuous sentences.",
-    "Accurate Status Reporting: The status bar and page indicators now accurately report the true count of detected text lines (e.g. 24 lines instead of 2 lines)."
+    "One-Click 'Install Update Now': Added a prominent action button to download and launch update installers directly from the update modal with live progress.",
+    "Reinstall & Repair Mode: Users running the latest version can easily reinstall or repair their installation with a single click.",
+    "Eliminated OCR Python Metadata Leak: Completely removes dictionary debug dumps from transcribed notes.",
+    "Automatic Desk Background Cropping: Automatically trims dark table surfaces when notebook pages are photographed with a smartphone.",
+    "Stabilized Line Pitch for Ruled Notebooks: Prevents notebook ruling and loose-leaf margins from collapsing text into single-letter vertical slivers."
   ]
 }
