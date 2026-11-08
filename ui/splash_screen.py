@@ -95,7 +95,7 @@ class ModernSplashScreen(QSplashScreen):
         layout.addWidget(lbl_sub)
 
         # Version badge
-        lbl_ver = QLabel("Version 1.3.0  •  100% Offline Edition")
+        lbl_ver = QLabel("Version 1.3.1  •  100% Offline Edition")
         lbl_ver.setStyleSheet("font-size: 11px; font-weight: 600; color: #a6e3a1; border: none; background: transparent;")
         lbl_ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(lbl_ver)

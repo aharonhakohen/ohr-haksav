@@ -38,9 +38,9 @@ def get_current_app_version() -> str:
     vpath = get_resource_path("version.json")
     try:
         with open(vpath, "r", encoding="utf-8") as f:
-            return json.load(f).get("version", "1.3.0")
+            return json.load(f).get("version", "1.3.1")
     except Exception:
-        return "1.3.0"
+        return "1.3.1"
 
 
 def parse_version_tuple(v_str: str) -> tuple:

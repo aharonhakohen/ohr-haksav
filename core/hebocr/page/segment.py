@@ -147,19 +147,27 @@ def estimate_line_pitch(binary: np.ndarray) -> float:
         return 30.0
 
     corr = np.correlate(profile, profile, mode="full")[len(profile) - 1 :]
-    lo = max(8, int(len(profile) * 0.004))       # below this is stroke texture
-    hi = min(len(corr) - 1, int(len(profile) * 0.15))  # above this is page structure
+    h = len(profile)
+    # A realistic handwritten page has between 12 and 55 lines.
+    # Prevent pitch from dropping into microscopic stroke/ruled-line noise (e.g. 8px on a 2000px image).
+    lo = max(18, int(h / 65))
+    hi = min(len(corr) - 1, int(h / 12))
     if hi <= lo + 2:
-        return 30.0
+        return 35.0
 
     window = corr[lo:hi]
-    # First local maximum that stands above its neighbours, not just the argmax:
-    # the argmax can land on a harmonic when a page has paragraph gaps.
     peaks = [
         i for i in range(1, len(window) - 1)
         if window[i] > window[i - 1] and window[i] >= window[i + 1] and window[i] > 0
     ]
-    return float(lo + (peaks[0] if peaks else int(np.argmax(window))))
+    if peaks:
+        max_val = np.max(window)
+        # Avoid tiny ripples (< 25% of strongest peak) from faint ruling lines
+        valid_peaks = [p for p in peaks if window[p] >= 0.25 * max_val]
+        chosen = valid_peaks[0] if valid_peaks else int(np.argmax(window))
+    else:
+        chosen = int(np.argmax(window))
+    return float(lo + chosen)
 
 
 def estimate_skew(binary: np.ndarray, limit: float = 6.0, step: float = 0.5) -> float:
@@ -297,7 +305,7 @@ def merge_overlapping(boxes: list[LineBox], pitch: float) -> list[LineBox]:
             v_overlap = min(box.y + box.h, other.y + other.h) - max(box.y, other.y)
             shorter = min(box.h, other.h)
             h_gap = max(box.x, other.x) - min(box.x + box.w, other.x + other.w)
-            if v_overlap > shorter * 0.5 and h_gap < pitch * 1.2:
+            if v_overlap > shorter * 0.4 and h_gap < pitch * 1.8:
                 x0 = min(box.x, other.x)
                 y0 = min(box.y, other.y)
                 x1 = max(box.x + box.w, other.x + other.w)
