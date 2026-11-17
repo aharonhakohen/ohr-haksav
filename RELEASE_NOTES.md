@@ -47,7 +47,7 @@ Version `v1.2.0` introduces a dedicated **"Check for Updates..."** tool inside t
    - **Guaranteed User Data Isolation**: Explicitly isolates application program files from user data; all personal handwriting profiles, mistake memory rules, and backups stored in `%APPDATA%\KsavKooker` remain 100% untouched.
    - **Upgrade Mode Indicator**: The setup wizard displays a clear green confirmation banner when an existing installation is detected, assuring the user that their data is safe.
 3. **Automated Deployment with `version.json` (`build_exe.py`)**:
-   - Deploy script now copies `version.json` alongside `KsavKooker_Setup.exe` into destination staging folders (e.g. `M:\My Drive\Personal\Dovid Shmaryahu\Notes App`), enabling instant offline update checking across network workstations.
+   - Deploy script now copies `version.json` alongside `OhrHaKsav_Setup.exe` into destination staging folders (e.g. `\\newltcserver\Installs\OhrHaKsav` or local USB media), enabling instant offline update checking across network workstations.
 
 ---
 
