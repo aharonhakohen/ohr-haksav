@@ -8,6 +8,7 @@ high-contrast typography, and dynamic English/Hebrew UI localization.
 
 import os
 import sys
+import json
 from typing import List, Dict, Any, Optional
 from PIL import Image
 
@@ -18,15 +19,16 @@ from PyQt6.QtWidgets import (
     QToolBar, QStatusBar, QFrame, QInputDialog,
     QMenuBar, QMenu, QToolButton, QSizePolicy
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
 from PyQt6.QtGui import QIcon, QPixmap, QImage, QAction, QKeySequence
 
 from ui.image_viewer import DocumentViewer
 from ui.text_editor import HebrewTextEditor
 from ui.dictionary_dialog import DictionaryManagerDialog
 from ui.about_dialog import AboutDialog
+from ui.update_banner import UpdateBanner
 from ui.theme import DARK_THEME, LIGHT_THEME
-from ui.i18n import t, I18nManager
+from ui.i18n import t, I18nManager, SETTINGS_PATH, get_current_language
 from core.ocr_engine import OCREngine
 from core.learning_engine import LearningEngine
 from core.docx_exporter import export_notes_to_docx
@@ -111,11 +113,16 @@ class MainWindow(QMainWindow):
         self.is_dark_theme = False  # Default to clean, modern Light Mode
         self._load_theme_setting()
         self.active_worker = None
+        self._remote_update_data = None
+        self._startup_update_worker = None
 
         self._init_ui()
         self._refresh_profiles_ui()
         self._retranslate_ui()
         self.apply_theme()
+
+        # Silent background update check after app UI loads
+        QTimer.singleShot(2500, self._start_startup_update_check)
 
     def _init_ui(self):
         # 1. Native Windows Menu Bar
@@ -130,6 +137,14 @@ class MainWindow(QMainWindow):
 
         # 3. Streamlined Action Toolbar
         self._create_top_toolbar(main_layout)
+
+        # 3.5 In-App Update Notification Banner (Hidden by default, slides down if update available)
+        self.update_banner = UpdateBanner(
+            on_install_clicked=self._on_banner_install_clicked,
+            on_details_clicked=self._on_banner_details_clicked,
+            parent=central
+        )
+        main_layout.addWidget(self.update_banner)
 
         # 4. Main 3-Pane Splitter (Sidebar | Document Viewer | Text Editor)
         content_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -594,8 +609,19 @@ class MainWindow(QMainWindow):
         self.act_lang_he.setText(t("menu_lang_he"))
 
         self.m_help.setTitle(t("menu_help"))
-        self.act_help_updates.setText(t("menu_help_check_updates"))
+        if getattr(self, "_remote_update_data", None) and self._remote_update_data.get("version"):
+            v = self._remote_update_data.get("version")
+            self.act_help_updates.setText(f"{t('menu_help_check_updates')} (v{v} {t('status_update_available')})")
+        else:
+            self.act_help_updates.setText(t("menu_help_check_updates"))
         self.act_help_about.setText(t("menu_help_about"))
+
+        if hasattr(self, "update_banner") and self.update_banner.isVisible() and getattr(self, "_remote_update_data", None):
+            self.update_banner.show_update(
+                self._remote_update_data.get("version", ""),
+                self._remote_update_data,
+                lang=get_current_language()
+            )
 
         # Action Toolbar
         self.btn_attach.setText(f"📁 {t('btn_add_pages_short')}")
@@ -1014,10 +1040,39 @@ class MainWindow(QMainWindow):
         self._refresh_profiles_ui()
         self.update_learned_count_badge()
 
-    def open_update_dialog(self):
+    def open_update_dialog(self, auto_start_install: bool = False):
         from ui.update_dialog import UpdateDialog
-        dlg = UpdateDialog(self)
+        dlg = UpdateDialog(self, auto_start_install=auto_start_install)
         dlg.exec()
+
+    def _start_startup_update_check(self):
+        """Silently checks for updates in background after startup (if enabled)."""
+        try:
+            from ui.update_dialog import StartupUpdateWorker, CURRENT_VERSION
+            self._startup_update_worker = StartupUpdateWorker(CURRENT_VERSION)
+            self._startup_update_worker.update_available.connect(self._on_startup_update_found)
+            self._startup_update_worker.start()
+        except Exception:
+            pass
+
+    def _on_startup_update_found(self, data: dict):
+        """Triggered when background worker finds an available update."""
+        version = data.get("version", "")
+        if not version:
+            return
+        self._remote_update_data = data
+        if hasattr(self, 'update_banner') and self.update_banner:
+            self.update_banner.show_update(version, data, lang=get_current_language())
+        if hasattr(self, 'act_help_updates') and self.act_help_updates:
+            self.act_help_updates.setText(f"{t('menu_help_check_updates')} (v{version} {t('status_update_available')})")
+
+    def _on_banner_install_clicked(self, data: dict):
+        """User clicked 'Install Update Now' on the top banner."""
+        self.open_update_dialog(auto_start_install=True)
+
+    def _on_banner_details_clicked(self, data: dict):
+        """User clicked 'What's New' on the top banner."""
+        self.open_update_dialog(auto_start_install=False)
 
     def open_about_dialog(self):
         dlg = AboutDialog(self)
@@ -1075,6 +1130,9 @@ class MainWindow(QMainWindow):
             self.setStyleSheet(LIGHT_THEME)
             self.btn_theme.setText("🌙")
             self.btn_theme.setToolTip("Switch to Dark Theme")
+
+        if hasattr(self, 'update_banner') and self.update_banner:
+            self.update_banner.apply_theme("dark" if self.is_dark_theme else "light")
 
     def center_on_screen(self):
         """Centers the window on the active monitor or primary display."""

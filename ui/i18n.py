@@ -81,6 +81,13 @@ STRINGS = {
         "update_available_hdr": "⚡ New Version Available: v{version}",
         "update_release_date": "Released: {date}",
         "update_whats_new": "What's New in This Release:",
+        "update_status_checking_net": "Checking Internet connection...",
+        "update_status_net_ok": "Internet connection active. Checking for updates...",
+        "update_err_no_internet": "No Internet connection detected.\n\nOhr HaKsav is operating in 100% offline mode. If working in a school or domain environment without Internet, you can configure a local server path in the Settings tab.",
+        "update_banner_msg": "⚡ A new version of Ohr HaKsav (v{version}) is available!",
+        "update_banner_btn_install": "⬇ Install Update Now",
+        "update_banner_btn_details": "What's New",
+        "menu_help_check_updates_available": "Check for Updates... ⚡ (v{version} Available!)",
         "update_btn_check_again": "Check Again",
         "update_btn_run_installer": "🚀 Launch Installer Now",
         "update_btn_install_now": "⬇ Install Update Now",
@@ -313,6 +320,13 @@ STRINGS = {
         "update_available_hdr": "⚡ גרסה חדשה זמינה: v{version}",
         "update_release_date": "תאריך שחרור: {date}",
         "update_whats_new": "מה חדש בגרסה זו:",
+        "update_status_checking_net": "בודק חיבור לאינטרנט...",
+        "update_status_net_ok": "חיבור אינטרנט פעיל. בודק עדכונים...",
+        "update_err_no_internet": "לא זוהה חיבור לאינטרנט.\n\n'אור הכתב' פועל במצב אופליין מלא (100% Offline). בסביבת רשת ישיבתית או שרת מוסדי, ניתן להגדיר תיקיית שרת מקומית בלשונית ההגדרות.",
+        "update_banner_msg": "⚡ גרסה חדשה של אור הכתב (v{version}) זמינה כעת!",
+        "update_banner_btn_install": "⬇ התקן עדכון כעת",
+        "update_banner_btn_details": "מה חדש",
+        "menu_help_check_updates_available": "בדוק עדכונים... ⚡ (גרסה v{version} זמינה!)",
         "update_btn_check_again": "בדוק שוב",
         "update_btn_run_installer": "🚀 הפעל התקנת עדכון כעת",
         "update_btn_install_now": "⬇ התקן עדכון כעת",
@@ -517,8 +531,16 @@ class I18nManager:
     def save_settings(self):
         try:
             os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+            cfg = {}
+            if os.path.exists(SETTINGS_PATH):
+                try:
+                    with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                except Exception:
+                    pass
+            cfg["language"] = self.current_lang
             with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-                json.dump({"language": self.current_lang}, f, indent=2)
+                json.dump(cfg, f, indent=2)
         except Exception:
             pass
 

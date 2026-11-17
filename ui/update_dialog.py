@@ -5,7 +5,10 @@ Supports checking for updates via:
   1. Official GitHub Cloud (https://raw.githubusercontent.com/.../version.json)
   2. Local Network Share / Windows Server Domain Share / USB / Offline folder
      (e.g. \\newltcserver\Installs\OhrHaKsav or M:\My Drive\... containing version.json & OhrHaKsav_Setup.exe)
-Includes one-click in-app background download and installation of updates.
+Includes:
+  - Fast, reliable Internet connectivity pre-check (DNS socket / HTTP connecttest)
+  - Silent background startup update checking
+  - One-click in-app background download and installation of updates
 """
 
 import os
@@ -14,11 +17,12 @@ import json
 import urllib.request
 import subprocess
 import tempfile
+import socket
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QProgressBar, QTextBrowser, QRadioButton, QButtonGroup,
     QLineEdit, QFileDialog, QTabWidget, QWidget, QFrame,
-    QMessageBox, QApplication
+    QMessageBox, QApplication, QCheckBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon, QFont, QPixmap, QGuiApplication, QCursor
@@ -35,14 +39,39 @@ FALLBACK_ONLINE_URLS = [
 ]
 
 
+def is_connected_to_internet(timeout: float = 2.0) -> bool:
+    """Fast check to see if an internet connection is available."""
+    # Test standard DNS servers: Google (8.8.8.8) and Cloudflare (1.1.1.1) on port 53
+    for host in ("8.8.8.8", "1.1.1.1"):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(timeout)
+            s.connect((host, 53))
+            s.close()
+            return True
+        except (OSError, socket.timeout):
+            continue
+    # Fallback to HTTP request if port 53 is blocked by network firewall
+    try:
+        req = urllib.request.Request(
+            "http://www.msftconnecttest.com/connecttest.txt",
+            headers={"User-Agent": "OhrHaKsav"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200
+    except Exception:
+        pass
+    return False
+
+
 def get_current_app_version() -> str:
     """Read current version from version.json."""
     vpath = get_resource_path("version.json")
     try:
         with open(vpath, "r", encoding="utf-8") as f:
-            return json.load(f).get("version", "1.3.2")
+            return json.load(f).get("version", "1.3.3")
     except Exception:
-        return "1.3.2"
+        return "1.3.3"
 
 
 def parse_version_tuple(v_str: str) -> tuple:
@@ -129,9 +158,91 @@ class DownloadWorker(QThread):
             self.error.emit("Failed to download setup installer.")
 
 
+class StartupUpdateWorker(QThread):
+    """Silent background worker that checks for updates on application launch."""
+    update_available = pyqtSignal(dict)  # version_data
+
+    def __init__(self, current_version: str):
+        super().__init__()
+        self.current_version = current_version
+
+    def run(self):
+        try:
+            source_type = "online"
+            source_local_path = ""
+            source_online_url = DEFAULT_ONLINE_URL
+            auto_check = True
+
+            if os.path.exists(SETTINGS_PATH):
+                try:
+                    with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                        auto_check = cfg.get("update_auto_check", True)
+                        source_type = cfg.get("update_source_type", "online")
+                        source_local_path = cfg.get("update_local_path", "")
+                        source_online_url = cfg.get("update_online_url", DEFAULT_ONLINE_URL)
+                except Exception:
+                    pass
+
+            if not auto_check:
+                return
+
+            data = None
+            if source_type == "local":
+                folder = source_local_path.strip()
+                if not folder or not os.path.exists(folder):
+                    return
+                vpath = os.path.join(folder, "version.json")
+                if not os.path.exists(vpath):
+                    return
+                with open(vpath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                setup_exe = os.path.join(folder, "OhrHaKsav_Setup.exe")
+                data["_local_setup_path"] = setup_exe if os.path.exists(setup_exe) else ""
+                data["_source_folder"] = folder
+            else:
+                # Online check: Verify Internet connectivity first!
+                if not is_connected_to_internet(timeout=2.0):
+                    return
+
+                req_url = source_online_url.strip() or DEFAULT_ONLINE_URL
+                urls = [req_url]
+                for fb in FALLBACK_ONLINE_URLS:
+                    if fb not in urls:
+                        urls.append(fb)
+
+                for url in urls:
+                    try:
+                        req = urllib.request.Request(
+                            url,
+                            headers={"User-Agent": "OhrHaKsav-Updater/1.3", "Accept": "application/json"}
+                        )
+                        with urllib.request.urlopen(req, timeout=8) as resp:
+                            candidate = json.loads(resp.read().decode("utf-8"))
+                            if candidate and "version" in candidate:
+                                data = candidate
+                                break
+                    except Exception:
+                        continue
+
+            if not data or "version" not in data:
+                return
+
+            remote_ver = data.get("version", "0.0.0")
+            cur_tuple = parse_version_tuple(self.current_version)
+            remote_tuple = parse_version_tuple(remote_ver)
+
+            if remote_tuple > cur_tuple:
+                self.update_available.emit(data)
+
+        except Exception:
+            pass  # Silent exit on background check failure
+
+
 class CheckUpdateWorker(QThread):
     check_completed = pyqtSignal(dict, bool)  # (version_data, is_update_available)
     check_failed = pyqtSignal(str)           # error_msg
+    status_updated = pyqtSignal(str)         # status_message
 
     def __init__(self, source_type: str, source_path: str, current_version: str):
         super().__init__()
@@ -163,7 +274,15 @@ class CheckUpdateWorker(QThread):
                 data["_source_folder"] = folder
 
             else:
-                # Online GitHub raw JSON with automatic fallback
+                # 1. Check for active Internet connection first!
+                self.status_updated.emit(t("update_status_checking_net"))
+                if not is_connected_to_internet(timeout=2.5):
+                    self.check_failed.emit(t("update_err_no_internet"))
+                    return
+
+                self.status_updated.emit(t("update_status_net_ok"))
+
+                # 2. Online GitHub raw JSON with automatic fallback
                 req_url = self.source_path.strip()
                 if not req_url or "TorahNotesOCR" in req_url:
                     req_url = DEFAULT_ONLINE_URL
@@ -217,9 +336,10 @@ class CheckUpdateWorker(QThread):
 
 
 class UpdateDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, auto_start_install: bool = False):
         super().__init__(parent)
         self.current_version = get_current_app_version()
+        self.auto_start_install = auto_start_install
         self.worker = None
         self.download_worker = None
         self.latest_data = {}
@@ -263,7 +383,7 @@ class UpdateDialog(QDialog):
         self.source_type = "online"
         self.source_local_path = ""
         self.source_online_url = DEFAULT_ONLINE_URL
-        self.auto_check_startup = False
+        self.auto_check_startup = True
 
         # Read from local_deploy.txt as sensible default for local share if exists
         deploy_cfg = os.path.join(BASE_DIR, "local_deploy.txt")
@@ -285,7 +405,7 @@ class UpdateDialog(QDialog):
                     self.source_online_url = cfg.get("update_online_url", self.source_online_url)
                     if not self.source_online_url or "TorahNotesOCR" in self.source_online_url:
                         self.source_online_url = DEFAULT_ONLINE_URL
-                    self.auto_check_startup = cfg.get("update_auto_check", self.auto_check_startup)
+                    self.auto_check_startup = cfg.get("update_auto_check", True)
             except Exception:
                 pass
 
@@ -294,8 +414,11 @@ class UpdateDialog(QDialog):
             os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
             cfg = {}
             if os.path.exists(SETTINGS_PATH):
-                with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
+                try:
+                    with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                except Exception:
+                    pass
 
             cfg["update_source_type"] = self.source_type
             cfg["update_local_path"] = self.source_local_path
@@ -522,6 +645,14 @@ class UpdateDialog(QDialog):
 
         layout.addSpacing(10)
 
+        # Startup auto-check toggle
+        self.chk_auto_startup = QCheckBox(t("update_auto_check"))
+        self.chk_auto_startup.setChecked(self.auto_check_startup)
+        self.chk_auto_startup.setStyleSheet("font-size: 13px; color: #1e293b;")
+        layout.addWidget(self.chk_auto_startup)
+
+        layout.addSpacing(10)
+
         # Save Button
         btn_save = QPushButton(t("update_save_settings_btn"))
         btn_save.setObjectName("btn_primary")
@@ -540,6 +671,7 @@ class UpdateDialog(QDialog):
     def _save_and_recheck(self):
         self.source_type = "local" if self.rad_local.isChecked() else "online"
         self.source_local_path = self.txt_local_path.text().strip()
+        self.auto_check_startup = self.chk_auto_startup.isChecked()
         self._save_settings()
         self.tabs.setCurrentIndex(0)
         self._start_check()
@@ -567,9 +699,13 @@ class UpdateDialog(QDialog):
 
         source_path = self.source_local_path if self.source_type == "local" else self.source_online_url
         self.worker = CheckUpdateWorker(self.source_type, source_path, self.current_version)
+        self.worker.status_updated.connect(self._on_check_status_updated)
         self.worker.check_completed.connect(self._on_check_completed)
         self.worker.check_failed.connect(self._on_check_failed)
         self.worker.start()
+
+    def _on_check_status_updated(self, msg: str):
+        self.lbl_status.setText(msg)
 
     def _on_check_completed(self, data: dict, is_avail: bool):
         self.progress_bar.setVisible(False)
@@ -613,6 +749,10 @@ class UpdateDialog(QDialog):
                     self.btn_open_folder.setVisible(True)
                 self.btn_open_web.setVisible(True)
 
+            # If auto_start_install was requested (e.g. from the banner), trigger immediately
+            if self.auto_start_install:
+                self._handle_install_now()
+
         else:
             self.lbl_status.setText(t("update_up_to_date_hdr"))
             self.lbl_status.setStyleSheet("font-size: 15px; font-weight: bold; color: #059669;")
@@ -651,10 +791,7 @@ class UpdateDialog(QDialog):
         html = f"""
         <div style="font-family: 'Segoe UI', sans-serif; line-height: 1.5; color: #b91c1c; padding: 8px;">
             <p><b>{t('update_err_hdr')}</b></p>
-            <p style="color: #475569;">{err_msg}</p>
-            <p style="color: #64748b; font-size: 12px;">
-                Tip: If working offline or in a Windows Server domain environment, open the <b>Update Source & Settings</b> tab to specify a local network folder or USB path containing version.json and OhrHaKsav_Setup.exe.
-            </p>
+            <p style="color: #475569; white-space: pre-wrap;">{err_msg}</p>
         </div>
         """
         self.browser_details.setHtml(html)
@@ -739,7 +876,7 @@ class UpdateDialog(QDialog):
         QMessageBox.warning(
             self,
             t("update_err_hdr"),
-            f"Failed to download update automatically:\n" + str(err_msg) + "\n\nYou can click 'Open Release on GitHub' to download manually."
+            f"Failed to download update automatically:\n" + str(err_msg) + "\n\nYou can click 'Open Release on GitHub' to download the installer manually."
         )
 
     def _run_local_installer(self, setup_exe: str = ""):
