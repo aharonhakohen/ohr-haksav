@@ -112,10 +112,17 @@ class LearningEngine:
                 app_dir = custom_dir
             else:
                 roaming_appdata = os.environ.get("APPDATA")
-                if roaming_appdata:
-                    app_dir = os.path.join(roaming_appdata, "OhrHaKsav")
-                else:
-                    app_dir = os.path.join(os.path.expanduser("~"), ".ohr_haksav")
+                base_appdata = os.path.join(roaming_appdata, "OhrHaKsav") if roaming_appdata else os.path.join(os.path.expanduser("~"), ".ohr_haksav")
+                settings_cfg = os.path.join(base_appdata, "ui_settings.json")
+                if os.path.exists(settings_cfg):
+                    try:
+                        with open(settings_cfg, "r", encoding="utf-8") as f:
+                            cfg = json.load(f)
+                            if cfg.get("custom_data_dir") and os.path.exists(cfg["custom_data_dir"]):
+                                base_appdata = cfg["custom_data_dir"]
+                    except Exception:
+                        pass
+                app_dir = base_appdata
 
         self.app_dir = app_dir
         self.profiles_dir = os.path.join(self.app_dir, "profiles")

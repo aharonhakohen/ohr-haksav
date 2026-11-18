@@ -19,9 +19,9 @@ def get_version() -> str:
     vpath = os.path.join(BASE_DIR, "version.json")
     try:
         with open(vpath, "r", encoding="utf-8") as f:
-            return json.load(f).get("version", "1.2.1")
+            return json.load(f).get("version", "1.3.6")
     except Exception:
-        return "1.2.1"
+        return "1.3.6"
 
 def generate_version_info(version_str: str, original_filename: str, description: str, out_path: str) -> str:
     """Generate a PyInstaller-compatible Windows Version Info resource file."""
