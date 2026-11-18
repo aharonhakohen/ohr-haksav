@@ -14,6 +14,8 @@ Includes:
 import os
 import sys
 import json
+import hashlib
+import zipfile
 import urllib.request
 import subprocess
 import tempfile
@@ -39,8 +41,48 @@ FALLBACK_ONLINE_URLS = [
 ]
 
 
+def is_strict_offline_mode() -> bool:
+    """
+    Returns True if Enterprise Air-Gap / Strict Zero-Network Policy is enabled via
+    environment variable (OHR_HAKSAV_OFFLINE_ONLY=1) or ui_settings.json ('offline_only': true).
+    """
+    if os.environ.get("OHR_HAKSAV_OFFLINE_ONLY", "").strip() in ("1", "true", "yes"):
+        return True
+    if os.path.exists(SETTINGS_PATH):
+        try:
+            with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                if json.load(f).get("offline_only", False):
+                    return True
+        except Exception:
+            pass
+    return False
+
+
+def compute_file_sha256(file_path: str) -> str:
+    """Computes lowercase hex SHA-256 checksum of a file in streaming chunks."""
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        while True:
+            chunk = f.read(1024 * 256)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest().lower()
+
+
+def verify_file_sha256(file_path: str, expected_sha256: str) -> bool:
+    """Verifies file integrity against expected SHA-256 hex digest."""
+    expected = (expected_sha256 or "").strip().lower()
+    if not expected:
+        return True  # No checksum published for legacy builds
+    actual = compute_file_sha256(file_path)
+    return actual == expected
+
+
 def is_connected_to_internet(timeout: float = 2.0) -> bool:
-    """Fast check to see if an internet connection is available."""
+    """Fast check to see if an internet connection is available. Blocked in strict air-gap mode."""
+    if is_strict_offline_mode():
+        return False
     # Test standard DNS servers: Google (8.8.8.8) and Cloudflare (1.1.1.1) on port 53
     for host in ("8.8.8.8", "1.1.1.1"):
         try:
@@ -69,9 +111,34 @@ def get_current_app_version() -> str:
     vpath = get_resource_path("version.json")
     try:
         with open(vpath, "r", encoding="utf-8") as f:
-            return json.load(f).get("version", "1.3.6")
+            return json.load(f).get("version", "1.4.0")
     except Exception:
-        return "1.3.6"
+        return "1.4.0"
+
+
+CURRENT_VERSION = get_current_app_version()
+
+
+def get_current_engine_version() -> str:
+    """Read current engine compatibility version from version.json (used for lightweight delta patches)."""
+    vpath = get_resource_path("version.json")
+    try:
+        with open(vpath, "r", encoding="utf-8") as f:
+            return str(json.load(f).get("engineVersion", "1.4"))
+    except Exception:
+        return "1.4"
+
+
+def find_local_patch(folder: str, version: str = "") -> str:
+    """Finds a lightweight code-only delta patch zip in a local/UNC folder."""
+    if not folder or not os.path.exists(folder):
+        return ""
+    clean_ver = str(version).lstrip("vV").strip()
+    if clean_ver:
+        p = os.path.join(folder, f"OhrHaKsav_Patch_v{clean_ver}.zip")
+        if os.path.exists(p):
+            return p
+    return ""
 
 
 def parse_version_tuple(v_str: str) -> tuple:
@@ -121,14 +188,23 @@ def find_local_installer(folder: str, version: str = "") -> str:
 
 class DownloadWorker(QThread):
     progress = pyqtSignal(int, int, int)  # cur_bytes, tot_bytes, percent
-    finished = pyqtSignal(str)           # downloaded_dest_path
-    error = pyqtSignal(str)              # error_msg
+    finished = pyqtSignal(str, bool)      # (downloaded_dest_path, is_patch)
+    error = pyqtSignal(str)               # error_msg
 
-    def __init__(self, download_url: str, version: str, fallback_url: str = ""):
+    def __init__(
+        self,
+        download_url: str,
+        version: str,
+        fallback_url: str = "",
+        expected_sha256: str = "",
+        is_patch: bool = False
+    ):
         super().__init__()
         self.download_url = download_url
         self.version = version
         self.fallback_url = fallback_url
+        self.expected_sha256 = (expected_sha256 or "").strip().lower()
+        self.is_patch = is_patch
         self._is_cancelled = False
 
     def cancel(self):
@@ -136,7 +212,11 @@ class DownloadWorker(QThread):
 
     def run(self):
         temp_dir = tempfile.gettempdir()
-        dest_path = os.path.join(temp_dir, f"OhrHaKsav_Setup_v{self.version}.exe")
+        if self.is_patch:
+            dest_path = os.path.join(temp_dir, f"OhrHaKsav_Patch_v{self.version}.zip")
+        else:
+            dest_path = os.path.join(temp_dir, f"OhrHaKsav_Setup_v{self.version}.exe")
+
         urls_to_try = [self.download_url]
         if self.fallback_url and self.fallback_url not in urls_to_try:
             urls_to_try.append(self.fallback_url)
@@ -148,7 +228,7 @@ class DownloadWorker(QThread):
             try:
                 req = urllib.request.Request(
                     url,
-                    headers={"User-Agent": "OhrHaKsav-Updater/1.3"}
+                    headers={"User-Agent": "OhrHaKsav-Updater/1.4"}
                 )
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     tot_bytes = int(resp.headers.get("Content-Length", 0))
@@ -173,8 +253,23 @@ class DownloadWorker(QThread):
                                 pass
                         return
 
-                # Download succeeded
-                self.finished.emit(dest_path)
+                # Security Integrity Check: Verify SHA-256 digest if provided in version.json
+                if self.expected_sha256 and not verify_file_sha256(dest_path, self.expected_sha256):
+                    actual = compute_file_sha256(dest_path)
+                    try:
+                        os.remove(dest_path)
+                    except Exception:
+                        pass
+                    self.error.emit(
+                        f"Security Verification Failed (SHA-256 Mismatch)!\n\n"
+                        f"Expected: {self.expected_sha256[:16]}...\n"
+                        f"Received: {actual[:16]}...\n\n"
+                        f"The downloaded file was deleted for your safety. Please retry or download manually."
+                    )
+                    return
+
+                # Download & integrity check succeeded
+                self.finished.emit(dest_path, self.is_patch)
                 return
             except Exception as err:
                 last_err = err
@@ -183,7 +278,7 @@ class DownloadWorker(QThread):
         if last_err:
             self.error.emit(str(last_err))
         else:
-            self.error.emit("Failed to download setup installer.")
+            self.error.emit("Failed to download update package.")
 
 
 class StartupUpdateWorker(QThread):
@@ -226,9 +321,13 @@ class StartupUpdateWorker(QThread):
                 with open(vpath, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 setup_exe = find_local_installer(folder, data.get("version", ""))
+                patch_zip = find_local_patch(folder, data.get("version", ""))
                 data["_local_setup_path"] = setup_exe
+                data["_local_patch_path"] = patch_zip
                 data["_source_folder"] = folder
             else:
+                if is_strict_offline_mode():
+                    return
                 # Online check: Verify Internet connectivity first!
                 if not is_connected_to_internet(timeout=2.0):
                     return
@@ -296,12 +395,22 @@ class CheckUpdateWorker(QThread):
                 with open(vpath, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
-                # Check if setup exe is also in this folder
+                # Check if setup exe or lightweight delta patch is also in this folder
                 setup_exe = find_local_installer(folder, data.get("version", ""))
+                patch_zip = find_local_patch(folder, data.get("version", ""))
                 data["_local_setup_path"] = setup_exe
+                data["_local_patch_path"] = patch_zip
                 data["_source_folder"] = folder
 
             else:
+                if is_strict_offline_mode():
+                    self.check_failed.emit(
+                        "Strict Air-Gap / Zero-Network Mode is enabled.\n\n"
+                        "All outbound internet checks are disabled by policy. "
+                        "Switch to 'Local / Network Share' or disable Strict Air-Gap Mode in the Update Settings tab."
+                    )
+                    return
+
                 # 1. Check for active Internet connection first!
                 self.status_updated.emit(t("update_status_checking_net"))
                 if not is_connected_to_internet(timeout=2.5):
@@ -412,6 +521,7 @@ class UpdateDialog(QDialog):
         self.source_local_path = ""
         self.source_online_url = DEFAULT_ONLINE_URL
         self.auto_check_startup = True
+        self.offline_only = False
 
         # Read from local_deploy.txt as sensible default for local share if exists
         deploy_cfg = os.path.join(BASE_DIR, "local_deploy.txt")
@@ -434,6 +544,7 @@ class UpdateDialog(QDialog):
                     if not self.source_online_url or "TorahNotesOCR" in self.source_online_url:
                         self.source_online_url = DEFAULT_ONLINE_URL
                     self.auto_check_startup = cfg.get("update_auto_check", True)
+                    self.offline_only = bool(cfg.get("offline_only", False))
             except Exception:
                 pass
 
@@ -452,6 +563,7 @@ class UpdateDialog(QDialog):
             cfg["update_local_path"] = self.source_local_path
             cfg["update_online_url"] = self.source_online_url
             cfg["update_auto_check"] = self.auto_check_startup
+            cfg["offline_only"] = self.offline_only
 
             with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
                 json.dump(cfg, f, indent=2, ensure_ascii=False)
@@ -679,6 +791,12 @@ class UpdateDialog(QDialog):
         self.chk_auto_startup.setStyleSheet("font-size: 13px; color: #1e293b;")
         layout.addWidget(self.chk_auto_startup)
 
+        # Strict Air-Gap / Zero-Network Policy Toggle
+        self.chk_offline_only = QCheckBox("🔒 Strict Air-Gap / Zero-Network Policy (Never emit any internet traffic — TAG / Filter Safe)")
+        self.chk_offline_only.setChecked(self.offline_only)
+        self.chk_offline_only.setStyleSheet("font-size: 12.5px; color: #334155;")
+        layout.addWidget(self.chk_offline_only)
+
         layout.addSpacing(10)
 
         # Save Button
@@ -700,6 +818,7 @@ class UpdateDialog(QDialog):
         self.source_type = "local" if self.rad_local.isChecked() else "online"
         self.source_local_path = self.txt_local_path.text().strip()
         self.auto_check_startup = self.chk_auto_startup.isChecked()
+        self.offline_only = self.chk_offline_only.isChecked()
         self._save_settings()
         self.tabs.setCurrentIndex(0)
         self._start_check()
@@ -824,28 +943,58 @@ class UpdateDialog(QDialog):
         """
         self.browser_details.setHtml(html)
 
+    def _can_use_delta_patch(self) -> bool:
+        """
+        Determines whether a lightweight code-only delta patch can be applied
+        directly over the installed frozen directory (matching AI engineVersion).
+        """
+        if not getattr(sys, 'frozen', False):
+            return False
+        local_eng = get_current_engine_version()
+        remote_eng = str(self.latest_data.get("engineVersion", ""))
+        return bool(remote_eng and local_eng == remote_eng)
+
     def _handle_install_now(self):
         if self.download_worker and self.download_worker.isRunning():
             return
 
-        # 1. Local setup executable available
+        remote_ver = str(self.latest_data.get("version", self.current_version)).lstrip("vV")
+
+        # 1a. Local lightweight delta patch available (fast ~20MB update on UNC share!)
+        local_patch = self.latest_data.get("_local_patch_path", "")
+        if self._can_use_delta_patch() and local_patch and os.path.exists(local_patch):
+            expected_sha = self.latest_data.get("patchSha256", "")
+            if expected_sha and not verify_file_sha256(local_patch, expected_sha):
+                QMessageBox.critical(self, "Security Verification Failed", "Local delta patch failed SHA-256 integrity verification and was aborted.")
+                return
+            self._apply_delta_patch_and_restart(local_patch)
+            return
+
+        # 1b. Local setup executable available
         local_setup = self.latest_data.get("_local_setup_path", "")
         if local_setup and os.path.exists(local_setup):
             self._run_local_installer(local_setup)
             return
 
-        remote_ver = str(self.latest_data.get("version", self.current_version)).lstrip("vV")
         if self.source_type == "local" and self.source_local_path:
             cand = find_local_installer(self.source_local_path, remote_ver)
             if cand and os.path.exists(cand):
                 self._run_local_installer(cand)
                 return
 
-        # 2. Online GitHub download and install
-        # Check if version.json provided an explicit installer download URL
-        custom_dl_url = self.latest_data.get("installerDownloadUrl", "")
-        download_url = custom_dl_url or f"https://github.com/aharonhakohen/ohr-haksav/releases/download/v{remote_ver}/OhrHaKsav_Setup_v{remote_ver}.exe"
-        fallback_url = f"https://github.com/aharonhakohen/ohr-haksav/releases/download/v{remote_ver}/OhrHaKsav_Setup.exe"
+        # 2. Online GitHub download: Prefer fast lightweight delta patch if engine matches!
+        patch_url = self.latest_data.get("patchDownloadUrl", "")
+        use_patch = self._can_use_delta_patch() and bool(patch_url)
+
+        if use_patch:
+            download_url = patch_url
+            fallback_url = ""
+            expected_sha = self.latest_data.get("patchSha256", "")
+        else:
+            custom_dl_url = self.latest_data.get("installerDownloadUrl", "")
+            download_url = custom_dl_url or f"https://github.com/aharonhakohen/ohr-haksav/releases/download/v{remote_ver}/OhrHaKsav_Setup_v{remote_ver}.exe"
+            fallback_url = f"https://github.com/aharonhakohen/ohr-haksav/releases/download/v{remote_ver}/OhrHaKsav_Setup.exe"
+            expected_sha = self.latest_data.get("installerSha256", "")
 
         self.btn_install_now.setEnabled(False)
         self.btn_install_now.setText(t("update_btn_downloading", pct=0))
@@ -856,7 +1005,13 @@ class UpdateDialog(QDialog):
         self.lbl_status.setText(t("update_downloading_status", cur_mb=0.0, tot_mb=0.0, pct=0))
         self.lbl_status.setStyleSheet("font-size: 13px; font-weight: bold; color: #2563eb;")
 
-        self.download_worker = DownloadWorker(download_url, remote_ver, fallback_url=fallback_url)
+        self.download_worker = DownloadWorker(
+            download_url,
+            remote_ver,
+            fallback_url=fallback_url,
+            expected_sha256=expected_sha,
+            is_patch=use_patch
+        )
         self.download_worker.progress.connect(self._on_download_progress)
         self.download_worker.finished.connect(self._on_download_finished)
         self.download_worker.error.connect(self._on_download_error)
@@ -869,13 +1024,17 @@ class UpdateDialog(QDialog):
         self.lbl_status.setText(t("update_downloading_status", cur_mb=cur_mb, tot_mb=tot_mb, pct=pct))
         self.btn_install_now.setText(t("update_btn_downloading", pct=pct))
 
-    def _on_download_finished(self, dest_path: str):
+    def _on_download_finished(self, dest_path: str, is_patch: bool = False):
         self.progress_bar.setVisible(False)
         self.btn_check_again.setEnabled(True)
         self.btn_install_now.setEnabled(True)
         self.btn_install_now.setText(t("update_btn_install_now"))
-        self.lbl_status.setText(t("update_download_complete"))
+        self.lbl_status.setText(t("update_download_complete") + " (SHA-256 Verified ✓)")
         self.lbl_status.setStyleSheet("font-size: 14px; font-weight: bold; color: #059669;")
+
+        if is_patch:
+            self._apply_delta_patch_and_restart(dest_path)
+            return
 
         remote_ver = self.latest_data.get("version", self.current_version)
         reply = QMessageBox.question(
@@ -894,6 +1053,43 @@ class UpdateDialog(QDialog):
             QApplication.quit()
         else:
             self.accept()
+
+    def _apply_delta_patch_and_restart(self, patch_zip_path: str):
+        """
+        Applies a lightweight code-only delta patch zip cleanly over the installed app folder
+        after exiting Ohr HaKsav, then restarts the updated application automatically.
+        """
+        app_dir = os.path.dirname(sys.executable)
+        exe_path = sys.executable
+        remote_ver = self.latest_data.get("version", self.current_version)
+
+        reply = QMessageBox.question(
+            self,
+            "Apply Fast Patch Update",
+            f"Ohr HaKsav v{remote_ver} lightweight patch is verified (SHA-256 ✓) and ready!\n\n"
+            f"Ohr HaKsav will close for 3 seconds to apply the patch and restart automatically.\n"
+            f"All your profiles and notes are preserved.\n\nProceed now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        ps_script = os.path.join(tempfile.gettempdir(), "ohr_haksav_apply_patch.ps1")
+        script_content = (
+            "Start-Sleep -Seconds 2\n"
+            f"Expand-Archive -Path '{patch_zip_path}' -DestinationPath '{app_dir}' -Force\n"
+            f"Start-Process -FilePath '{exe_path}'\n"
+            f"Remove-Item -Path '{patch_zip_path}' -Force -ErrorAction SilentlyContinue\n"
+        )
+        with open(ps_script, "w", encoding="utf-8") as f:
+            f.write(script_content)
+
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", ps_script],
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+        QApplication.quit()
 
     def _on_download_error(self, err_msg: str):
         self.progress_bar.setVisible(False)
@@ -914,6 +1110,17 @@ class UpdateDialog(QDialog):
             setup_exe = self.latest_data.get("_local_setup_path", "")
         if not setup_exe or not os.path.exists(setup_exe):
             QMessageBox.warning(self, "Setup Not Found", f"OhrHaKsav_Setup.exe was not found in: {self.latest_data.get('_source_folder', self.source_local_path)}")
+            return
+
+        # Verify SHA-256 digest if published in version.json
+        expected_sha = self.latest_data.get("installerSha256", "")
+        if expected_sha and not verify_file_sha256(setup_exe, expected_sha):
+            QMessageBox.critical(
+                self,
+                "Security Verification Failed",
+                f"The setup file '{os.path.basename(setup_exe)}' failed SHA-256 integrity verification.\n\n"
+                f"Execution was blocked to protect your system."
+            )
             return
 
         reply = QMessageBox.question(

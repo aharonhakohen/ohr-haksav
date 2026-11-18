@@ -20,6 +20,7 @@ from PIL import Image, ImageEnhance, ImageOps
 class DocumentViewer(QGraphicsView):
     zoom_changed = pyqtSignal(float)
     line_clicked = pyqtSignal(int)
+    region_selected = pyqtSignal(tuple)  # (x, y, w, h) in displayed image pixels
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -45,6 +46,31 @@ class DocumentViewer(QGraphicsView):
         self.bounding_boxes = []
         self.rect_items = []
         self._current_zoom = 1.0
+
+        # ROI Lasso Selection State
+        self._selection_mode = False
+        self._sel_origin = None
+        self._sel_rect_item = None
+
+    def set_selection_mode(self, enabled: bool):
+        """Enables or disables lasso region-of-interest drawing mode."""
+        self._selection_mode = bool(enabled)
+        if self._selection_mode:
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
+            self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+            self.viewport().unsetCursor()
+            self._clear_sel_rect()
+
+    def _clear_sel_rect(self):
+        if self._sel_rect_item is not None:
+            try:
+                self.scene.removeItem(self._sel_rect_item)
+            except Exception:
+                pass
+            self._sel_rect_item = None
+        self._sel_origin = None
 
     def load_image(self, pil_image: Image.Image, rotation: int = 0):
         """Loads a PIL image into the graphics scene."""
@@ -85,6 +111,7 @@ class DocumentViewer(QGraphicsView):
         # Update scene
         self.scene.clear()
         self.rect_items.clear()
+        self._sel_rect_item = None
         self.pixmap_item = self.scene.addPixmap(pixmap)
         self.scene.setSceneRect(QRectF(pixmap.rect()))
 
@@ -194,7 +221,16 @@ class DocumentViewer(QGraphicsView):
                 item.setBrush(QBrush(QColor(59, 130, 246, 20)))
 
     def mousePressEvent(self, event: QMouseEvent):
-        """Click on bounding box to emit line_clicked and focus editor."""
+        """Handles ROI lasso start OR click on line bounding box to focus editor."""
+        if self._selection_mode and event.button() == Qt.MouseButton.LeftButton and self.pixmap_item is not None:
+            self._clear_sel_rect()
+            self._sel_origin = self.mapToScene(event.pos())
+            pen = QPen(QColor(16, 185, 129, 255), 3, Qt.PenStyle.DashLine)
+            brush = QBrush(QColor(16, 185, 129, 45))
+            self._sel_rect_item = self.scene.addRect(QRectF(self._sel_origin, self._sel_origin), pen, brush)
+            event.accept()
+            return
+
         if event.button() == Qt.MouseButton.LeftButton and self.rect_items:
             scene_pos = self.mapToScene(event.pos())
             for idx, item in enumerate(self.rect_items):
@@ -204,3 +240,23 @@ class DocumentViewer(QGraphicsView):
                     event.accept()
                     return
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if self._selection_mode and self._sel_origin is not None and self._sel_rect_item is not None:
+            cur_pos = self.mapToScene(event.pos())
+            rect = QRectF(self._sel_origin, cur_pos).normalized()
+            self._sel_rect_item.setRect(rect)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        if self._selection_mode and event.button() == Qt.MouseButton.LeftButton and self._sel_origin is not None:
+            cur_pos = self.mapToScene(event.pos())
+            rect = QRectF(self._sel_origin, cur_pos).normalized()
+            self.set_selection_mode(False)
+            if rect.width() >= 15 and rect.height() >= 10:
+                self.region_selected.emit((int(rect.x()), int(rect.y()), int(rect.width()), int(rect.height())))
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
