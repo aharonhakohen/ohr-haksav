@@ -141,6 +141,7 @@ def build(force_rebuild: bool = False):
             "--hidden-import", "PyQt6",
             "--hidden-import", "torch",
             "--hidden-import", "PIL",
+            "--hidden-import", "fitz",
             "--hidden-import", "docx",
             "--hidden-import", "core.hebocr.recognize",
             "--hidden-import", "core.hebocr.wordlm",
