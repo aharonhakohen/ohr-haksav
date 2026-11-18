@@ -9,7 +9,7 @@ high-contrast typography, and dynamic English/Hebrew UI localization.
 import os
 import sys
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from PIL import Image
 
 from PyQt6.QtWidgets import (
@@ -26,10 +26,12 @@ from ui.image_viewer import DocumentViewer
 from ui.text_editor import HebrewTextEditor
 from ui.update_banner import UpdateBanner
 from ui.theme import DARK_THEME, LIGHT_THEME
-from ui.i18n import t, I18nManager, SETTINGS_PATH, get_current_language
+from ui.i18n import t, I18nManager, SETTINGS_PATH, get_current_language, get_app_data_dir
 from core.ocr_engine import OCREngine
 from core.learning_engine import LearningEngine
 from core.logger import log
+
+SESSION_PATH = os.path.join(get_app_data_dir(), "active_session.json")
 
 def get_resource_path(rel_path: str) -> str:
     """Resolve path to resource file for both PyInstaller and source development."""
@@ -89,6 +91,20 @@ class OCRWorker(QThread):
             self.error.emit(str(e))
 
 
+class ModelPreWarmWorker(QThread):
+    def __init__(self, ocr_engine: OCREngine):
+        super().__init__()
+        self.ocr_engine = ocr_engine
+
+    def run(self):
+        try:
+            log.info("Background model pre-warming started...")
+            self.ocr_engine.load_model()
+            log.info("Background model pre-warming complete. Neural OCR model ready.")
+        except Exception as e:
+            log.debug(f"Pre-warm skipped: {e}")
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -121,6 +137,19 @@ class MainWindow(QMainWindow):
         self._refresh_profiles_ui()
         self._retranslate_ui()
         self.apply_theme()
+
+        self.setAcceptDrops(True)
+        self._prewarm_worker = None
+
+        # Interactive line synchronization between Viewer and Proofreading Editor
+        self.viewer.line_clicked.connect(self._on_viewer_line_clicked)
+        self.editor.line_focused.connect(self._on_editor_line_focused)
+
+        # Restore previous session if present (draft protection)
+        QTimer.singleShot(400, self.check_restore_previous_session)
+
+        # Pre-warm neural vision model in background for instantaneous first scan
+        QTimer.singleShot(800, self._start_model_prewarm)
 
         # Silent background update check after app UI loads
         QTimer.singleShot(2500, self._start_startup_update_check)
@@ -669,6 +698,7 @@ class MainWindow(QMainWindow):
 
         # Refresh dynamic profile dropdown text
         self._refresh_profiles_ui()
+        self._update_learn_button_status()
 
         # Sidebar
         self.lbl_pages.setText(t("sidebar_title"))
@@ -701,18 +731,32 @@ class MainWindow(QMainWindow):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
     def dropEvent(self, event):
+        valid_exts = ('.jpg', '.jpeg', '.png', '.webp', '.tiff', '.bmp', '.pdf')
         paths = []
         for url in event.mimeData().urls():
             p = url.toLocalFile()
-            if os.path.isfile(p) and p.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.tiff', '.bmp')):
+            if os.path.isfile(p) and p.lower().endswith(valid_exts):
                 paths.append(p)
+            elif os.path.isdir(p):
+                for root, _, fnames in os.walk(p):
+                    for fn in sorted(fnames):
+                        if fn.lower().endswith(valid_exts):
+                            paths.append(os.path.join(root, fn))
         if paths:
             self.add_images(paths)
+            event.acceptProposedAction()
 
     def attach_images_dialog(self):
         files, _ = QFileDialog.getOpenFileNames(
-            self, t("btn_attach"), "", "Images (*.jpg *.jpeg *.png *.webp *.tiff *.bmp)"
+            self,
+            t("sidebar_add_tooltip"),
+            "",
+            "Torah Notebook Documents (*.pdf *.png *.jpg *.jpeg *.bmp *.tiff *.webp);;PDF Documents (*.pdf);;Images (*.png *.jpg *.jpeg);;All Files (*)"
         )
         if files:
             self.add_images(files)
@@ -720,8 +764,31 @@ class MainWindow(QMainWindow):
     def add_images(self, file_paths: List[str]):
         from PIL import ImageOps
         initial_count = len(self.pages)
-        log.info(f"Adding {len(file_paths)} image(s) to notebook session...")
+        log.info(f"Adding {len(file_paths)} item(s) to notebook session...")
+
+        expanded_paths = []
         for path in file_paths:
+            if path.lower().endswith(".pdf"):
+                try:
+                    import fitz
+                    doc = fitz.open(path)
+                    base_name = os.path.splitext(os.path.basename(path))[0]
+                    cache_dir = os.path.join(get_app_data_dir(), "pdf_cache", base_name)
+                    os.makedirs(cache_dir, exist_ok=True)
+                    log.info(f"Extracting {len(doc)} page(s) from PDF '{os.path.basename(path)}'...")
+                    for page_idx in range(len(doc)):
+                        page = doc[page_idx]
+                        pix = page.get_pixmap(dpi=200)
+                        out_img = os.path.join(cache_dir, f"{base_name}_p{page_idx + 1:02d}.png")
+                        pix.save(out_img)
+                        expanded_paths.append(out_img)
+                except Exception as e:
+                    log.error(f"Error rendering PDF '{path}': {e}")
+                    QMessageBox.warning(self, "PDF Import Warning", f"Could not extract pages from {os.path.basename(path)}:\n{e}")
+            else:
+                expanded_paths.append(path)
+
+        for path in expanded_paths:
             fname = os.path.basename(path)
             init_rot = 0
             try:
@@ -747,12 +814,13 @@ class MainWindow(QMainWindow):
                 "rotation": init_rot,
                 "raw_text": "",
                 "edited_text": "",
+                "last_learned_text": "",
                 "status": t("page_status_ready"),
                 "lines_boxes": []
             })
 
             item = QListWidgetItem()
-            item.setText(f"{fname}\n{t('page_status_ready')}")
+            item.setText(f"{fname}\n⚪ {t('page_status_ready')}")
             try:
                 pix = QPixmap(path)
                 if not pix.isNull():
@@ -766,6 +834,8 @@ class MainWindow(QMainWindow):
             self.list_pages.setCurrentRow(0)
 
         self.lbl_status.setText(f"{len(self.pages)} pages attached. Ready to scan.")
+        self._update_page_list_items()
+        self.save_session_state()
 
     def remove_selected_page(self):
         row = self.list_pages.currentRow()
@@ -777,6 +847,9 @@ class MainWindow(QMainWindow):
                 self.editor.set_text("", "")
                 self.viewer.scene.clear()
                 self.lbl_status.setText(t("status_ready"))
+            self._update_learn_button_status()
+            self._update_page_list_items()
+            self.save_session_state()
 
     def clear_all_pages(self):
         if not self.pages:
@@ -792,13 +865,15 @@ class MainWindow(QMainWindow):
             self.viewer.scene.clear()
             self.editor.set_text("", "")
             self.lbl_status.setText(t("status_ready"))
+            self.clear_saved_session()
+            self._update_learn_button_status()
 
     def on_page_selected(self, row: int):
         if row < 0 or row >= len(self.pages):
             return
 
         # Save previous edits before switching
-        if self.current_page_idx >= 0 and self.current_page_idx < len(self.pages):
+        if self.current_page_idx >= 0 and self.current_page_idx < len(self.pages) and self.current_page_idx != row:
             self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
 
         self.current_page_idx = row
@@ -812,12 +887,19 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.lbl_status.setText(f"Error loading image: {e}")
 
+        # Load bounding boxes into viewer if already scanned
+        self.viewer.set_bounding_boxes(pdata.get("lines_boxes", []))
+
         # Load text into editor
         self.editor.set_text(pdata["edited_text"], pdata["raw_text"])
+        self._update_learn_button_status()
+        self.save_session_state()
 
     def on_text_edited(self):
         if self.current_page_idx >= 0 and self.current_page_idx < len(self.pages):
             self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+        self._update_learn_button_status()
+        self.save_session_state()
 
     def rotate_image_cw(self):
         if self.current_page_idx >= 0 and self.current_page_idx < len(self.pages):
@@ -868,6 +950,7 @@ class MainWindow(QMainWindow):
             p = self.pages[page_idx]
             p["raw_text"] = res["raw_text"]
             p["edited_text"] = res["text"]
+            p["last_learned_text"] = res["text"]
             p["status"] = t("page_status_scanned")
             p["lines_boxes"] = res["lines"]
 
@@ -877,9 +960,13 @@ class MainWindow(QMainWindow):
 
             if page_idx == self.current_page_idx:
                 self.editor.set_text(res["text"], res["raw_text"])
+                self.viewer.set_bounding_boxes(res.get("lines", []))
                 if res["corrections_applied"] > 0:
                     self.lbl_learned_badge.setText(f"Applied {res['corrections_applied']} automatic learned corrections ✓")
 
+            self._update_learn_button_status()
+            self._update_page_list_items()
+            self.save_session_state()
             self.lbl_status.setText(f"Page {page_idx + 1} scanned successfully ({len(res['lines'])} lines, applied {res['corrections_applied']} learned rules)!")
             log.info(f"Page {page_idx + 1} scanned successfully: {len(res['lines'])} lines, {res['corrections_applied']} corrections.")
 
@@ -929,37 +1016,117 @@ class MainWindow(QMainWindow):
             f"All {len(self.pages)} pages in the notebook have been transcribed successfully!"
         )
 
-    def learn_current_corrections(self):
-        if self.current_page_idx < 0 or self.current_page_idx >= len(self.pages):
+    def get_pages_with_unlearned_edits(self) -> List[Tuple[int, dict]]:
+        """
+        Returns list of (page_index, page_data) for all pages that have
+        proofreading edits differing from their last learned/raw text.
+        """
+        if 0 <= self.current_page_idx < len(self.pages):
+            self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+
+        pending = []
+        for idx, p in enumerate(self.pages):
+            raw = p.get("raw_text", "").strip()
+            edited = p.get("edited_text", "").strip()
+            last_learned = p.get("last_learned_text", raw).strip()
+            if raw and edited and edited != last_learned:
+                pending.append((idx, p))
+        return pending
+
+    def _update_learn_button_status(self):
+        """
+        Updates the 'Save & Learn Mistakes' toolbar button appearance and tooltip
+        based on whether there are pending unlearned edits across any attached pages.
+        """
+        if not hasattr(self, "btn_learn"):
             return
 
-        pdata = self.pages[self.current_page_idx]
-        cur_text = self.editor.get_text()
-        raw_text = pdata.get("raw_text", "")
+        pending = self.get_pages_with_unlearned_edits()
+        if pending:
+            count = len(pending)
+            pages_list = ", ".join(str(idx + 1) for idx, _ in pending)
+            if count == 1:
+                self.btn_learn.setText(f"💾 {t('btn_learn_pending_single', page=pending[0][0] + 1)}")
+            else:
+                self.btn_learn.setText(f"💾 {t('btn_learn_pending_multi', count=count)}")
 
-        if not raw_text:
-            QMessageBox.information(self, "Notice", "This page has not been scanned yet, or no edits were made.")
-            return
-
-        learned = self.learning_engine.learn_from_corrections(raw_text, cur_text, pdata["filename"])
-        self.update_learned_count_badge()
-
-        if learned:
-            ex_str = ""
-            for raw, corr in learned[:5]:
-                ex_str += f" • '{raw}' ➔ '{corr}'\n"
-            if len(learned) > 5:
-                ex_str += f"... and {len(learned) - 5} more corrections.\n"
-
-            msg = t(
-                "learn_success_msg",
-                count=len(learned),
-                profile=self.learning_engine.get_active_profile_name(),
-                examples=ex_str
-            )
-            QMessageBox.information(self, t("learn_success_title"), msg)
+            self.btn_learn.setObjectName("btn_warning")
+            self.btn_learn.setToolTip(t("btn_learn_pending_tooltip", pages=pages_list))
+            self.btn_learn.style().unpolish(self.btn_learn)
+            self.btn_learn.style().polish(self.btn_learn)
         else:
-            QMessageBox.information(self, t("learn_none_title"), t("learn_none_msg"))
+            self.btn_learn.setText(f"🎓 {t('btn_learn_short')}")
+            self.btn_learn.setObjectName("")
+            self.btn_learn.setToolTip("""<b>🎓 Save & Learn Mistakes (Ctrl+L)</b><br>Step 3: Saves your proofreading fixes into the handwriting memory bank so future scans automatically correct these words!""")
+            self.btn_learn.style().unpolish(self.btn_learn)
+            self.btn_learn.style().polish(self.btn_learn)
+
+    def learn_current_corrections(self):
+        """Action handler for 'Save & Learn Mistakes' (Ctrl+L or Toolbar Button)."""
+        self.learn_all_corrections(silent=False)
+
+    def learn_all_corrections(self, silent: bool = False) -> int:
+        """
+        Learns corrections across all pages with pending proofreading edits into the ACTIVE profile.
+        Returns the total count of newly learned rules.
+        """
+        if 0 <= self.current_page_idx < len(self.pages):
+            self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+
+        pending = self.get_pages_with_unlearned_edits()
+
+        if not pending:
+            if 0 <= self.current_page_idx < len(self.pages):
+                p = self.pages[self.current_page_idx]
+                raw = p.get("raw_text", "").strip()
+                if not raw:
+                    if not silent:
+                        QMessageBox.information(self, t("notice_title"), t("notice_page_not_scanned"))
+                    return 0
+            if not silent:
+                QMessageBox.information(self, t("learn_none_title"), t("learn_none_msg"))
+            return 0
+
+        all_learned = []
+        pages_learned = []
+
+        for idx, p in pending:
+            raw = p.get("raw_text", "")
+            edited = p.get("edited_text", "")
+            learned = self.learning_engine.learn_from_corrections(raw, edited, p.get("filename", ""))
+            p["last_learned_text"] = edited
+            if learned:
+                all_learned.extend(learned)
+                pages_learned.append(idx + 1)
+            else:
+                p["last_learned_text"] = edited
+
+        self.update_learned_count_badge()
+        self._update_learn_button_status()
+
+        log.info(f"Learned {len(all_learned)} rules across pages {pages_learned} into profile '{self.learning_engine.get_active_profile_name()}'.")
+
+        if not silent:
+            if all_learned:
+                ex_str = ""
+                for raw, corr in all_learned[:5]:
+                    ex_str += f" • '{raw}' ➔ '{corr}'\n"
+                if len(all_learned) > 5:
+                    ex_str += f"... and {len(all_learned) - 5} more corrections.\n"
+
+                pages_str = ", ".join(str(pn) for pn in pages_learned)
+                msg = t(
+                    "learn_success_msg_batch",
+                    count=len(all_learned),
+                    pages=pages_str,
+                    profile=self.learning_engine.get_active_profile_name(),
+                    examples=ex_str
+                )
+                QMessageBox.information(self, t("learn_success_title"), msg)
+            else:
+                QMessageBox.information(self, t("learn_none_title"), t("learn_none_msg"))
+
+        return len(all_learned)
 
     def _refresh_profiles_ui(self):
         profiles = self.learning_engine.list_profiles()
@@ -1023,6 +1190,18 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Notice", "Please attach and edit pages before exporting.")
             return
 
+        # Ensure latest edits from active editor are saved into the page model
+        if 0 <= self.current_page_idx < len(self.pages):
+            self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+
+        # Auto-learn any pending handwriting corrections into active profile before exporting
+        pending = self.get_pages_with_unlearned_edits()
+        if pending:
+            learned_count = self.learn_all_corrections(silent=True)
+            if learned_count > 0:
+                log.info(f"Auto-learned {learned_count} handwriting corrections during Word (.docx) export.")
+                self.lbl_status.setText(t("export_learned_notice", count=learned_count, profile=self.learning_engine.get_active_profile_name()))
+
         title, ok1 = QInputDialog.getText(self, t("export_dialog_title"), t("export_title_prompt"), text=t("export_default_title"))
         if not ok1:
             return
@@ -1080,6 +1259,18 @@ class MainWindow(QMainWindow):
         if not self.pages:
             QMessageBox.information(self, "Notice", "Please attach and edit pages before exporting.")
             return
+
+        # Ensure latest edits from active editor are saved into the page model
+        if 0 <= self.current_page_idx < len(self.pages):
+            self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+
+        # Auto-learn any pending handwriting corrections into active profile before exporting
+        pending = self.get_pages_with_unlearned_edits()
+        if pending:
+            learned_count = self.learn_all_corrections(silent=True)
+            if learned_count > 0:
+                log.info(f"Auto-learned {learned_count} handwriting corrections during Plain Text (.txt) export.")
+                self.lbl_status.setText(t("export_learned_notice", count=learned_count, profile=self.learning_engine.get_active_profile_name()))
 
         docs_dir = os.path.join(os.path.expanduser("~"), "Documents")
         default_file = os.path.join(docs_dir, "TorahNotes_Export.txt")
@@ -1223,3 +1414,206 @@ class MainWindow(QMainWindow):
                 self.move(x, y)
         except Exception:
             pass
+
+    def _on_viewer_line_clicked(self, line_num: int):
+        """User clicked a bounding box on the document image. Jump editor cursor to that line."""
+        if hasattr(self, "editor"):
+            self.editor.go_to_line(line_num)
+
+    def _on_editor_line_focused(self, line_num: int):
+        """Cursor moved to a new line in the editor. Highlight line bounding box in image viewer."""
+        if hasattr(self, "viewer"):
+            self.viewer.highlight_line(line_num)
+
+    def _start_model_prewarm(self):
+        """Pre-warms the PyTorch neural OCR model in the background so the first scan is instant."""
+        try:
+            self._prewarm_worker = ModelPreWarmWorker(self.ocr_engine)
+            self._prewarm_worker.start()
+        except Exception as e:
+            log.debug(f"Pre-warm launch note: {e}")
+
+    def _update_page_list_items(self):
+        """Updates sidebar page list items with visual status badges (⚪ Ready / 🟠 Pending / 🟢 Synced)."""
+        for idx, p in enumerate(self.pages):
+            raw = p.get("raw_text", "").strip()
+            edited = p.get("edited_text", "").strip()
+            last_learned = p.get("last_learned_text", raw).strip()
+            if not raw:
+                status_text = "⚪ " + t("page_status_ready")
+            elif edited != last_learned:
+                status_text = "🟠 " + t("page_status_pending")
+            else:
+                status_text = "🟢 " + t("page_status_scanned")
+
+            item = self.list_pages.item(idx)
+            if item:
+                item.setText(f"{p['filename']}\n{status_text}")
+
+    def save_session_state(self):
+        """Saves current notebook session to disk for auto-recovery."""
+        try:
+            if not self.pages:
+                if os.path.exists(SESSION_PATH):
+                    os.remove(SESSION_PATH)
+                return
+
+            if 0 <= self.current_page_idx < len(self.pages):
+                self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+
+            valid_pages = []
+            for p in self.pages:
+                if os.path.exists(p.get("path", "")):
+                    valid_pages.append({
+                        "path": p["path"],
+                        "filename": p["filename"],
+                        "rotation": p.get("rotation", 0),
+                        "raw_text": p.get("raw_text", ""),
+                        "edited_text": p.get("edited_text", ""),
+                        "last_learned_text": p.get("last_learned_text", ""),
+                        "status": p.get("status", ""),
+                        "lines_boxes": p.get("lines_boxes", [])
+                    })
+
+            if not valid_pages:
+                if os.path.exists(SESSION_PATH):
+                    os.remove(SESSION_PATH)
+                return
+
+            from datetime import datetime
+            data = {
+                "saved_at": datetime.now().isoformat(),
+                "active_page_idx": max(0, min(self.current_page_idx, len(valid_pages) - 1)),
+                "pages": valid_pages
+            }
+            os.makedirs(os.path.dirname(SESSION_PATH), exist_ok=True)
+            with open(SESSION_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            log.debug(f"Session save note: {e}")
+
+    def check_restore_previous_session(self):
+        """Offers to restore previously open session if one was saved."""
+        try:
+            if not os.path.exists(SESSION_PATH):
+                return
+            with open(SESSION_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            pages = data.get("pages", [])
+            valid_pages = [p for p in pages if os.path.exists(p.get("path", ""))]
+            if not valid_pages:
+                if os.path.exists(SESSION_PATH):
+                    os.remove(SESSION_PATH)
+                return
+
+            saved_at = data.get("saved_at", "")
+            date_str = saved_at.split("T")[0] if "T" in saved_at else "recently"
+            res = QMessageBox.question(
+                self,
+                t("session_restore_title"),
+                t("session_restore_msg", count=len(valid_pages), date=date_str),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if res == QMessageBox.StandardButton.Yes:
+                log.info(f"Restoring previous session with {len(valid_pages)} page(s)...")
+                self.pages = valid_pages
+                self.list_pages.clear()
+                for p in self.pages:
+                    item = QListWidgetItem()
+                    item.setText(f"{p['filename']}\n{p.get('status', t('page_status_ready'))}")
+                    try:
+                        pix = QPixmap(p["path"])
+                        if not pix.isNull():
+                            thumb = pix.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                            item.setIcon(QIcon(thumb))
+                    except Exception:
+                        pass
+                    self.list_pages.addItem(item)
+                target_idx = data.get("active_page_idx", 0)
+                if 0 <= target_idx < len(self.pages):
+                    self.list_pages.setCurrentRow(target_idx)
+                self._update_learn_button_status()
+                self._update_page_list_items()
+            else:
+                if os.path.exists(SESSION_PATH):
+                    os.remove(SESSION_PATH)
+        except Exception as e:
+            log.error(f"Error restoring session: {e}")
+
+    def clear_saved_session(self):
+        """Clears active session file on disk."""
+        try:
+            if os.path.exists(SESSION_PATH):
+                os.remove(SESSION_PATH)
+        except Exception:
+            pass
+
+    def closeEvent(self, event):
+        """
+        Intercepts window close events (X button, Alt+F4, or File > Exit).
+        Checks if any attached pages have unlearned proofreading corrections,
+        prompting the user so their handwriting training is never accidentally lost.
+        """
+        log.info("Application close requested. Verifying unsaved changes and learning state...")
+
+        # Ensure current editor text is synced
+        if 0 <= self.current_page_idx < len(self.pages):
+            self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+
+        pending = self.get_pages_with_unlearned_edits()
+        if pending:
+            pages_str = ", ".join(str(idx + 1) for idx, _ in pending)
+            log.info(f"Unlearned edits detected on page(s): {pages_str}. Prompting user before exit.")
+
+            box = QMessageBox(self)
+            box.setWindowTitle(t("close_confirm_title"))
+            box.setText(f"<b>{t('close_confirm_heading')}</b>")
+            box.setInformativeText(t("close_confirm_msg", pages=pages_str))
+            box.setIcon(QMessageBox.Icon.Question)
+
+            btn_save = box.addButton(t("close_btn_save_exit"), QMessageBox.ButtonRole.AcceptRole)
+            btn_discard = box.addButton(t("close_btn_discard_exit"), QMessageBox.ButtonRole.DestructiveRole)
+            btn_cancel = box.addButton(t("close_btn_cancel"), QMessageBox.ButtonRole.RejectRole)
+            box.setDefaultButton(btn_save)
+
+            box.exec()
+            clicked = box.clickedButton()
+
+            if clicked == btn_save:
+                count = self.learn_all_corrections(silent=True)
+                log.info(f"Learned {count} correction(s) across {len(pending)} page(s) on application close.")
+            elif clicked == btn_discard:
+                log.info("User elected to close without saving pending handwriting corrections.")
+            else:
+                log.info("User cancelled application close.")
+                event.ignore()
+                return
+
+        # Save session snapshot on close
+        self.save_session_state()
+
+        # Stop active workers cleanly if running
+        self._batch_scanning = False
+        if hasattr(self, "active_worker") and self.active_worker and self.active_worker.isRunning():
+            try:
+                self.active_worker.quit()
+                self.active_worker.wait(1000)
+            except Exception:
+                pass
+
+        if hasattr(self, "_startup_update_worker") and self._startup_update_worker and self._startup_update_worker.isRunning():
+            try:
+                self._startup_update_worker.quit()
+                self._startup_update_worker.wait(1000)
+            except Exception:
+                pass
+
+        if hasattr(self, "_prewarm_worker") and self._prewarm_worker and self._prewarm_worker.isRunning():
+            try:
+                self._prewarm_worker.quit()
+                self._prewarm_worker.wait(1000)
+            except Exception:
+                pass
+
+        log.info("Ohr HaKsav shutdown complete. Exiting.")
+        event.accept()

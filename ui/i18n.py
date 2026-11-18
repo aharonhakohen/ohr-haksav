@@ -168,8 +168,11 @@ STRINGS = {
         "btn_del_short": "Delete",
         "page_status_ready": "Ready to scan",
         "page_status_processing": "Processing OCR...",
-        "page_status_scanned": "Scanned successfully ✓",
+        "page_status_scanned": "Scanned & Synced ✓",
+        "page_status_pending": "Unsaved Edits Pending *",
         "page_status_error": "Scan error",
+        "session_restore_title": "Restore Previous Session",
+        "session_restore_msg": "Ohr HaKsav found an unsaved session with {count} page(s) from {date}.\n\nWould you like to restore your work?",
 
         # Viewer panel
         "viewer_title": "Page Image",
@@ -268,8 +271,21 @@ STRINGS = {
         # Learning feedback
         "learn_success_title": "Learning Complete ✓",
         "learn_success_msg": "Successfully learned and recorded {count} new correction rules in memory profile '{profile}'!\n\nExamples learned:\n{examples}\nThese corrections will now be applied automatically to all future scans!",
+        "learn_success_msg_batch": "Successfully learned and recorded {count} new correction rules across Page(s) {pages} in memory profile '{profile}'!\n\nExamples learned:\n{examples}\nThese corrections will now be applied automatically to all future scans!",
         "learn_none_title": "Memory",
-        "learn_none_msg": "No new corrections detected on this page (everything is already recorded in memory).",
+        "learn_none_msg": "No new corrections detected to learn (everything is already recorded in memory).",
+        "btn_learn_pending_single": "Save & Learn (Page {page})*",
+        "btn_learn_pending_multi": "Save & Learn ({count} Pages)*",
+        "btn_learn_pending_tooltip": "<b>🎓 Save & Learn Mistakes (Ctrl+L)</b><br><font color='#f59e0b'><b>Pending Edits Detected:</b></font> You made proofreading changes on Page(s) {pages}.<br>Click to absorb these corrections into the handwriting memory bank!",
+        "close_confirm_title": "Unsaved Handwriting Corrections",
+        "close_confirm_heading": "Save handwriting corrections before closing?",
+        "close_confirm_msg": "You made proofreading corrections on Page(s) {pages} that have not been saved to your handwriting memory bank.\n\nWould you like Ohr HaKsav to learn these corrections now so future scans automatically recognize them?",
+        "close_btn_save_exit": "💾 Save, Learn & Exit",
+        "close_btn_discard_exit": "Exit Without Saving",
+        "close_btn_cancel": "Cancel",
+        "export_learned_notice": "Exported document & automatically saved {count} handwriting corrections to memory profile '{profile}'!",
+        "notice_title": "Notice",
+        "notice_page_not_scanned": "Please scan this page and make proofreading edits before saving corrections.",
 
         # About Dialog
         "about_title": "About Ohr HaKsav",
@@ -419,8 +435,11 @@ STRINGS = {
         "btn_del_short": "מחק",
         "page_status_ready": "מוכן לסריקה",
         "page_status_processing": "סורק ב-OCR...",
-        "page_status_scanned": "נסרק בהצלחה ✓",
+        "page_status_scanned": "נסרק ומעודכן ✓",
+        "page_status_pending": "ממתין להטמעה *",
         "page_status_error": "שגיאה בסריקה",
+        "session_restore_title": "שחזור הפעלה קודמת",
+        "session_restore_msg": "נמצאה הפעלה עם {count} עמודים מתאריך {date}.\n\nהאם ברצונך לשחזר את העבודה הקודמת?",
 
         # Viewer panel
         "viewer_title": "תצלום הדף",
@@ -438,6 +457,7 @@ STRINGS = {
         # Editor panel
         "editor_title": "תמליל ועריכה (מימין לשמאל)",
         "editor_quick_abbr": "ראשי תיבות:",
+        "editor_workflow_hint": "💡 סדר עבודה: תקנו שגיאות בעורך הטקסט, ולאחר מכן לחצו '🎓 שמור ולמד שגיאות' לאימון הסריקות הבאות.",
         "editor_more_abbr": "עוד ▾",
         "abbr_menu_title": "⚡ קיצורים תורניים ▾",
         "abbr_group_seforim": "ספרים וראשונים",
@@ -518,8 +538,21 @@ STRINGS = {
         # Learning feedback
         "learn_success_title": "הלמידה הושלמה בהצלחה ✓",
         "learn_success_msg": "נלמדו ונרשמו בהצלחה {count} כללי תיקון חדשים בזיכרון המערכת בפרופיל '{profile}'!\n\nדוגמאות שנלמדו:\n{examples}\nתיקונים אלו יחולו אוטומטית בכל הסריקות הבאות!",
+        "learn_success_msg_batch": "נלמדו ונרשמו בהצלחה {count} כללי תיקון חדשים בעמוד(ים) {pages} בפרופיל '{profile}'!\n\nדוגמאות לתיקונים שנלמדו:\n{examples}\nתיקונים אלו יוחלו כעת באופן אוטומטי בכל הסריקות הבאות!",
         "learn_none_title": "זיכרון",
-        "learn_none_msg": "לא זוהו מילים חדשות ללמידה בעמוד זה (הכל כבר מעודכן בזיכרון).",
+        "learn_none_msg": "לא זוהו מילים חדשות ללמידה (הכל כבר מעודכן בזיכרון).",
+        "btn_learn_pending_single": "שמור והטמע (עמוד {page})*",
+        "btn_learn_pending_multi": "שמור והטמע ({count} עמודים)*",
+        "btn_learn_pending_tooltip": "<b>🎓 שמור ולמד שגיאות (Ctrl+L)</b><br><font color='#f59e0b'><b>ממתינים תיקונים להטמעה:</b></font> ביצעת שינויי הגהה בעמוד(ים) {pages}.<br>לחץ כאן כדי לרשום את התיקונים במאגר הזיכרון לכתב יד!",
+        "close_confirm_title": "תיקוני כתב יד שלא נשמרו",
+        "close_confirm_heading": "האם לשמור ולהטמיע את תיקוני כתב היד לפני היציאה?",
+        "close_confirm_msg": "ביצעת שינויי הגהה בעמוד(ים) {pages} שטרם נשמרו במאגר הזיכרון לכתב יד.\n\nהאם ברצונך ש'אור הכתב' ילמד וירשום תיקונים אלו כעת, כך שסריקות עתידיות יזהו אותם אוטומטית?",
+        "close_btn_save_exit": "💾 שמור, הטמע וצא",
+        "close_btn_discard_exit": "צא ללא שמירה",
+        "close_btn_cancel": "ביטול",
+        "export_learned_notice": "המסמך יוצא בהצלחה ונשמרו אוטומטית {count} תיקוני כתב יד לפרופיל '{profile}'!",
+        "notice_title": "הודעה",
+        "notice_page_not_scanned": "אנא סרוק עמוד זה ובצע תיקוני הגהה לפני שמירת התיקונים בזיכרון.",
 
         # About Dialog
         "about_title": "אודות אור הכתב",

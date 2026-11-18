@@ -286,8 +286,9 @@ class HelpTutorialDialog(QDialog):
             <h3 style="color: #0f172a; margin-bottom: 6px;">How Training Works in 3 Easy Steps:</h3>
             <ol style="padding-left: 20px;">
                 <li style="margin-bottom: 8px;"><b>Proofread in the Editor:</b> When OCR misreads a handwritten word (for example, reading <code>בדש</code> instead of <code>בס"ד</code>, or <code>חשה</code> instead of <code>משה</code>), simply edit the text in the right pane to the correct spelling.</li>
-                <li style="margin-bottom: 8px;"><b>Click '💾 Save & Learn Mistakes' (<kbd>Ctrl+L</kbd>):</b> The learning engine instantly compares the raw OCR output against your corrected text, automatically extracts every fix, and records the learning pair into your handwriting profile.</li>
+                <li style="margin-bottom: 8px;"><b>Click '💾 Save & Learn Mistakes' (<kbd>Ctrl+L</kbd>):</b> The learning engine instantly compares the raw OCR output against your corrected text across all modified pages, automatically extracts every fix, and records the learning pairs into your active handwriting profile.</li>
                 <li style="margin-bottom: 8px;"><b>Automatic Future Correction:</b> The next time you scan this writer's notes, the system automatically replaces those OCR mistakes before displaying the text! The green badge at the bottom right will show how many rules were applied.</li>
+                <li style="margin-bottom: 8px;"><b>Smart Close & Export Protection:</b> Never worry about forgetting to save your corrections! If you close the app or export your notes to Word while unlearned corrections exist, Ohr HaKsav automatically protects your work by prompting you or automatically saving all corrections into your memory profile!</li>
             </ol>
 
             <h3 style="color: #0f172a; margin-top: 18px; margin-bottom: 6px;">Working with Handwriting Profiles:</h3>
@@ -395,7 +396,7 @@ class HelpTutorialDialog(QDialog):
             <p>For network administrators managing computer labs, yeshiva servers, or teachers center workstations:</p>
             <ul>
                 <li><b>Pre-Flight Internet Check:</b> The updater performs an instant socket test (<10ms). On machines without Internet, it immediately falls back to offline mode without freezing.</li>
-                <li><b>UNC Network Share Updates:</b> In <i>Update Source & Settings</i>, configure a shared domain folder (e.g. <code>\\\\newltcserver\\Installs\\OhrHaKsav</code>). When you drop <code>version.json</code> and <code>OhrHaKsav_Setup_v1.3.5.exe</code> into this share, all network workstations can detect and install updates locally with zero external internet traffic!</li>
+                <li><b>UNC Network Share Updates:</b> In <i>Update Source & Settings</i>, configure a shared domain folder (e.g. <code>\\\\newltcserver\\Installs\\OhrHaKsav</code>). When you drop <code>version.json</code> and <code>OhrHaKsav_Setup_v1.3.6.exe</code> into this share, all network workstations can detect and install updates locally with zero external internet traffic!</li>
                 <li><b>Silent Background Polling:</b> The app quietly checks for updates on launch without disrupting teachers or students.</li>
             </ul>
         </div>
@@ -453,8 +454,9 @@ class HelpTutorialDialog(QDialog):
             <h3 style="color: #0f172a; margin-bottom: 6px;">כיצד מאמנים את המערכת ב-3 שלבים:</h3>
             <ol style="padding-right: 20px;">
                 <li style="margin-bottom: 8px;"><b>בצעו הגהה בעורך:</b> כאשר המערכת שוגה במילה מסוימת (למשל, זיהתה <code>בדש</code> במקום <code>בס"ד</code>, או <code>חשה</code> במקום <code>משה</code>), פשוט תקנו את המילה בעורך הטקסט משמאל.</li>
-                <li style="margin-bottom: 8px;"><b>לחצו על '💾 שמור ולמד טעויות' (<kbd>Ctrl+L</kbd>):</b> מנוע הלמידה משווה מיד בין הפלט הגולמי של הסריקה לבין הטקסט המתוקן שלכם, מחלץ את צמדי התיקון, ושומר אותם בפרופיל הפעיל שלכם.</li>
+                <li style="margin-bottom: 8px;"><b>לחצו על '💾 שמור ולמד טעויות' (<kbd>Ctrl+L</kbd>):</b> מנוע הלמידה משווה מיד בין הפלט הגולמי של הסריקה לבין הטקסט המתוקן שלכם בכל העמודים שנערכו, מחלץ את צמדי התיקון, ושומר אותם בפרופיל הפעיל שלכם.</li>
                 <li style="margin-bottom: 8px;"><b>תיקון אוטומטי בסריקות הבאות:</b> בסריקות הבאות של כתב יד זה, המערכת תחליף ותתקן את הטעויות באופן אוטומטי עוד לפני שהטקסט מופיע על המסך! התגית הירוקה למטה תציג כמה תיקונים הוחלו.</li>
+                <li style="margin-bottom: 8px;"><b>הגנה חכמה בסגירה ובייצוא:</b> לעולם לא תשכחו להטמיע! בעת סגירת התוכנה או ייצוא המסמך ל-Word, המערכת מזהה אוטומטית תיקונים שטרם נשמרו, ומציעה להטמיע את כל התיקונים מכל העמודים במאגר הזיכרון בלחיצה אחת!</li>
             </ol>
 
             <h3 style="color: #0f172a; margin-top: 18px; margin-bottom: 6px;">עבודה עם פרופילים מרובים:</h3>
@@ -562,7 +564,7 @@ class HelpTutorialDialog(QDialog):
             <p>עבור מנהלי רשת במוסדות חינוך, מרפ"ד, חדרי מחשבים וישיבות:</p>
             <ul>
                 <li><b>בדיקת חיבור מהירה (8ms):</b> מנגנון בדיקת העדכונים בודק קישוריות מיד. במחשבים ללא גישה לאינטרנט, הוא עובר מיד למצב אופליין ללא השהיות או קריסות.</li>
-                <li><b>עדכונים מתיקיית שרת מקומית (UNC):</b> בלשונית <i>הגדרות ומקור עדכון</i>, ניתן להגדיר נתיב שרת מקומי (כגון <code>\\\\newltcserver\\Installs\\OhrHaKsav</code>). כאשר מנהל הרשת מניח בתיקייה זו את <code>version.json</code> ואת קובץ ההתקנה <code>OhrHaKsav_Setup_v1.3.5.exe</code>, כל המחשבים ברשת המקומית יזהו את העדכון ויוכלו להתקינו מקומית ללא אינטרנט!</li>
+                <li><b>עדכונים מתיקיית שרת מקומית (UNC):</b> בלשונית <i>הגדרות ומקור עדכון</i>, ניתן להגדיר נתיב שרת מקומי (כגון <code>\\\\newltcserver\\Installs\\OhrHaKsav</code>). כאשר מנהל הרשת מניח בתיקייה זו את <code>version.json</code> ואת קובץ ההתקנה <code>OhrHaKsav_Setup_v1.3.6.exe</code>, כל המחשבים ברשת המקומית יזהו את העדכון ויוכלו להתקינו מקומית ללא אינטרנט!</li>
                 <li><b>בדיקה שקטה ברקע:</b> בעת הפעלת התוכנה מתבצעת בדיקה מהירה ברקע המציגה באנר עדין בלבד כאשר ישנו עדכון חדש.</li>
             </ul>
         </div>

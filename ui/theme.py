@@ -165,6 +165,18 @@ QPushButton#btn_success:hover {
     border-color: #34d399;
 }
 
+QPushButton#btn_warning {
+    background-color: #d97706;
+    color: #ffffff;
+    border: 1px solid #f59e0b;
+    font-weight: 600;
+}
+
+QPushButton#btn_warning:hover {
+    background-color: #b45309;
+    border-color: #fbbf24;
+}
+
 /* Splitter */
 QSplitter::handle {
     background-color: #313244;
@@ -452,6 +464,18 @@ QPushButton#btn_success {
 
 QPushButton#btn_success:hover {
     background-color: #047857;
+}
+
+QPushButton#btn_warning {
+    background-color: #d97706;
+    color: #ffffff;
+    border: 1px solid #b45309;
+    font-weight: 600;
+}
+
+QPushButton#btn_warning:hover {
+    background-color: #b45309;
+    border-color: #92400e;
 }
 
 QSplitter::handle {

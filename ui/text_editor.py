@@ -257,3 +257,13 @@ class HebrewTextEditor(QWidget):
         else:
             self.lbl_corrections.setText(t("editor_diff_none"))
             self.lbl_corrections.setStyleSheet("color: #a6adc8; font-size: 11px;")
+
+    def go_to_line(self, line_num: int):
+        """Moves cursor to the start of specified line index and ensures it is visible."""
+        doc = self.text_edit.document()
+        if 0 <= line_num < doc.blockCount():
+            block = doc.findBlockByNumber(line_num)
+            cursor = self.text_edit.textCursor()
+            cursor.setPosition(block.position())
+            self.text_edit.setTextCursor(cursor)
+            self.text_edit.ensureCursorVisible()

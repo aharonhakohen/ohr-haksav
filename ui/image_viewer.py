@@ -154,7 +154,14 @@ class DocumentViewer(QGraphicsView):
 
     def set_bounding_boxes(self, boxes: list):
         """Sets OCR line boxes for overlay display."""
-        self.bounding_boxes = boxes
+        clean_boxes = []
+        for b in boxes:
+            if isinstance(b, dict):
+                if 'box' in b and isinstance(b['box'], dict):
+                    clean_boxes.append(b['box'])
+                elif 'x' in b and 'y' in b:
+                    clean_boxes.append(b)
+        self.bounding_boxes = clean_boxes
         self._render_bounding_boxes()
 
     def _render_bounding_boxes(self):
@@ -162,8 +169,8 @@ class DocumentViewer(QGraphicsView):
             self.scene.removeItem(item)
         self.rect_items.clear()
 
-        pen = QPen(QColor(59, 130, 246, 180), 2)
-        brush = QBrush(QColor(59, 130, 246, 35))
+        pen = QPen(QColor(59, 130, 246, 140), 1)
+        brush = QBrush(QColor(59, 130, 246, 20))
 
         for idx, box in enumerate(self.bounding_boxes):
             if isinstance(box, dict):
@@ -172,16 +179,28 @@ class DocumentViewer(QGraphicsView):
                 w = box.get('w', 0)
                 h = box.get('h', 0)
                 rect_item = self.scene.addRect(QRectF(x, y, w, h), pen, brush)
-                rect_item.setToolTip(f"Line {idx + 1}")
+                rect_item.setToolTip(f"Line {idx + 1} (Click to jump in editor)")
                 self.rect_items.append(rect_item)
 
     def highlight_line(self, line_index: int):
-        """Highlights a specific line bounding box."""
+        """Highlights a specific line bounding box and gently centers view."""
         for idx, item in enumerate(self.rect_items):
             if idx == line_index:
                 item.setPen(QPen(QColor(234, 179, 8, 255), 3))
-                item.setBrush(QBrush(QColor(234, 179, 8, 70)))
+                item.setBrush(QBrush(QColor(234, 179, 8, 75)))
                 self.centerOn(item)
             else:
-                item.setPen(QPen(QColor(59, 130, 246, 180), 2))
-                item.setBrush(QBrush(QColor(59, 130, 246, 35)))
+                item.setPen(QPen(QColor(59, 130, 246, 140), 1))
+                item.setBrush(QBrush(QColor(59, 130, 246, 20)))
+
+    def mousePressEvent(self, event: QMouseEvent):
+        """Click on bounding box to emit line_clicked and focus editor."""
+        if event.button() == Qt.MouseButton.LeftButton and self.rect_items:
+            scene_pos = self.mapToScene(event.pos())
+            for idx, item in enumerate(self.rect_items):
+                if item.rect().contains(scene_pos):
+                    self.highlight_line(idx)
+                    self.line_clicked.emit(idx)
+                    event.accept()
+                    return
+        super().mousePressEvent(event)
