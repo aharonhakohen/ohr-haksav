@@ -105,6 +105,30 @@ class ModelPreWarmWorker(QThread):
             log.debug(f"Pre-warm skipped: {e}")
 
 
+class RegionOCRWorker(QThread):
+    finished = pyqtSignal(str, int)  # (recognized_text, corrections_applied)
+    error = pyqtSignal(str)
+
+    def __init__(self, ocr_engine: OCREngine, learning_engine: LearningEngine, image_path: str, rotation: int, box: tuple):
+        super().__init__()
+        self.ocr_engine = ocr_engine
+        self.learning_engine = learning_engine
+        self.image_path = image_path
+        self.rotation = rotation
+        self.box = box
+
+    def run(self):
+        try:
+            from PIL import ImageOps
+            pil_img = ImageOps.exif_transpose(Image.open(self.image_path))
+            if self.rotation % 360 != 0:
+                pil_img = pil_img.rotate(-self.rotation, expand=True)
+            res = self.ocr_engine.recognize_region(pil_img, self.box, learning_engine=self.learning_engine)
+            self.finished.emit(res.get("full_text", ""), res.get("corrections_applied", 0))
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -141,9 +165,12 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self._prewarm_worker = None
 
-        # Interactive line synchronization between Viewer and Proofreading Editor
+        # Interactive line synchronization & lasso ROI between Viewer and Proofreading Editor
         self.viewer.line_clicked.connect(self._on_viewer_line_clicked)
+        self.viewer.region_selected.connect(self._on_region_selected)
         self.editor.line_focused.connect(self._on_editor_line_focused)
+        self.editor.replace_all_pages_requested.connect(self._replace_all_across_notebook)
+        self._region_worker = None
 
         # Restore previous session if present (draft protection)
         QTimer.singleShot(400, self.check_restore_previous_session)
@@ -216,6 +243,18 @@ class MainWindow(QMainWindow):
 
         self.m_file.addSeparator()
 
+        self.act_file_open_proj = QAction("📂 Open Notebook Project (.ksav)... (Ctrl+Shift+O)", self)
+        self.act_file_open_proj.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        self.act_file_open_proj.triggered.connect(self.open_notebook_project)
+        self.m_file.addAction(self.act_file_open_proj)
+
+        self.act_file_save_proj = QAction("💾 Save Notebook Project (.ksav)... (Ctrl+Alt+S)", self)
+        self.act_file_save_proj.setShortcut(QKeySequence("Ctrl+Alt+S"))
+        self.act_file_save_proj.triggered.connect(self.save_notebook_project)
+        self.m_file.addAction(self.act_file_save_proj)
+
+        self.m_file.addSeparator()
+
         self.act_file_exp_word = QAction(t("menu_file_export_word"), self)
         self.act_file_exp_word.setShortcut(QKeySequence("Ctrl+E"))
         self.act_file_exp_word.triggered.connect(self.export_to_docx_dialog)
@@ -227,6 +266,10 @@ class MainWindow(QMainWindow):
         self.m_file.addAction(self.act_file_exp_txt)
 
         self.m_file.addSeparator()
+
+        self.act_file_privacy = QAction("🧹 Privacy Wipe (Clear Session & Temp Cache)", self)
+        self.act_file_privacy.triggered.connect(self.privacy_wipe_session)
+        self.m_file.addAction(self.act_file_privacy)
 
         self.act_file_exit = QAction(t("menu_file_exit"), self)
         self.act_file_exit.setShortcut(QKeySequence("Alt+F4"))
@@ -245,12 +288,52 @@ class MainWindow(QMainWindow):
         self.act_scan_all.triggered.connect(self.scan_all_pages)
         self.m_scan.addAction(self.act_scan_all)
 
+        self.act_scan_region = QAction("✂ Scan Drawn Region (Margin Note / Paragraph)", self)
+        self.act_scan_region.setShortcut(QKeySequence("Ctrl+R"))
+        self.act_scan_region.triggered.connect(self.start_region_selection)
+        self.m_scan.addAction(self.act_scan_region)
+
+        self.act_scan_split = QAction("📖 Split 2-Page Open Notebook Spread (Right → Left)", self)
+        self.act_scan_split.triggered.connect(self.split_current_two_page_spread)
+        self.m_scan.addAction(self.act_scan_split)
+
+        self.m_scan.addSeparator()
+
+        self.act_scan_high_acc = QAction("✨ High-Accuracy Mode (Beam Search Decoder)", self)
+        self.act_scan_high_acc.setCheckable(True)
+        self.act_scan_high_acc.setChecked(False)
+        self.act_scan_high_acc.triggered.connect(self._toggle_high_accuracy)
+        self.m_scan.addAction(self.act_scan_high_acc)
+
+        self.act_scan_clean_bg = QAction("🧹 Clean Shadows & Pale Blue Ruled Lines", self)
+        self.act_scan_clean_bg.setCheckable(True)
+        self.act_scan_clean_bg.setChecked(False)
+        self.act_scan_clean_bg.triggered.connect(self._toggle_clean_shadows)
+        self.m_scan.addAction(self.act_scan_clean_bg)
+
         self.m_scan.addSeparator()
 
         self.act_scan_contrast = QAction(t("menu_scan_enhance"), self)
         self.act_scan_contrast.setShortcut(QKeySequence("Ctrl+I"))
         self.act_scan_contrast.triggered.connect(self.toggle_image_contrast)
         self.m_scan.addAction(self.act_scan_contrast)
+
+        self.m_scan.addSeparator()
+
+        self.act_find = QAction("🔍 Find in Editor... (Ctrl+F)", self)
+        self.act_find.setShortcut(QKeySequence("Ctrl+F"))
+        self.act_find.triggered.connect(lambda: self.editor.open_find_bar(focus_replace=False))
+        self.m_scan.addAction(self.act_find)
+
+        self.act_replace = QAction("🔁 Find & Replace... (Ctrl+H)", self)
+        self.act_replace.setShortcut(QKeySequence("Ctrl+H"))
+        self.act_replace.triggered.connect(lambda: self.editor.open_find_bar(focus_replace=True))
+        self.m_scan.addAction(self.act_replace)
+
+        self.act_next_uncertain = QAction("⚠ Next Uncertain Line (F8)", self)
+        self.act_next_uncertain.setShortcut(QKeySequence("F8"))
+        self.act_next_uncertain.triggered.connect(lambda: self.editor.jump_to_next_low_confidence_line())
+        self.m_scan.addAction(self.act_next_uncertain)
 
         # Learning & Profiles Menu
         self.m_learn = mb.addMenu(t("menu_learning"))
@@ -486,19 +569,34 @@ class MainWindow(QMainWindow):
         hdr.addStretch()
 
         self.btn_add_page = QPushButton(t("btn_add_short"))
-        self.btn_add_page.setStyleSheet("padding: 2px 8px; font-size: 11px; font-weight: bold;")
+        self.btn_add_page.setStyleSheet("padding: 2px 6px; font-size: 11px; font-weight: bold;")
         self.btn_add_page.setToolTip(t("sidebar_add_tooltip"))
         self.btn_add_page.clicked.connect(self.attach_images_dialog)
         hdr.addWidget(self.btn_add_page)
 
+        self.btn_move_up = QPushButton("▲")
+        self.btn_move_up.setStyleSheet("padding: 2px 5px; font-size: 10px;")
+        self.btn_move_up.setToolTip("Move Selected Page Up")
+        self.btn_move_up.clicked.connect(self.move_page_up)
+        hdr.addWidget(self.btn_move_up)
+
+        self.btn_move_down = QPushButton("▼")
+        self.btn_move_down.setStyleSheet("padding: 2px 5px; font-size: 10px;")
+        self.btn_move_down.setToolTip("Move Selected Page Down")
+        self.btn_move_down.clicked.connect(self.move_page_down)
+        hdr.addWidget(self.btn_move_down)
+
         self.btn_remove_page = QPushButton(t("btn_del_short"))
-        self.btn_remove_page.setStyleSheet("padding: 2px 8px; font-size: 11px;")
+        self.btn_remove_page.setStyleSheet("padding: 2px 6px; font-size: 11px;")
         self.btn_remove_page.setToolTip(t("sidebar_remove_tooltip"))
         self.btn_remove_page.clicked.connect(self.remove_selected_page)
         hdr.addWidget(self.btn_remove_page)
         layout.addLayout(hdr)
 
         self.list_pages = QListWidget()
+        self.list_pages.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.list_pages.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.list_pages.model().rowsMoved.connect(self._on_pages_reordered)
         self.list_pages.currentRowChanged.connect(self.on_page_selected)
         layout.addWidget(self.list_pages)
 
@@ -519,19 +617,31 @@ class MainWindow(QMainWindow):
         v_bar.addStretch()
 
         self.btn_cw = QPushButton("↻ 90°")
-        self.btn_cw.setStyleSheet("padding: 3px 8px; font-size: 12px;")
+        self.btn_cw.setStyleSheet("padding: 3px 7px; font-size: 12px;")
         self.btn_cw.setToolTip(t("btn_cw_tooltip"))
         self.btn_cw.clicked.connect(self.rotate_image_cw)
         v_bar.addWidget(self.btn_cw)
 
         self.btn_ccw = QPushButton("↺ 90°")
-        self.btn_ccw.setStyleSheet("padding: 3px 8px; font-size: 12px;")
+        self.btn_ccw.setStyleSheet("padding: 3px 7px; font-size: 12px;")
         self.btn_ccw.setToolTip(t("btn_ccw_tooltip"))
         self.btn_ccw.clicked.connect(self.rotate_image_ccw)
         v_bar.addWidget(self.btn_ccw)
 
+        self.btn_scan_region = QPushButton("✂ Region")
+        self.btn_scan_region.setStyleSheet("padding: 3px 7px; font-size: 11.5px;")
+        self.btn_scan_region.setToolTip("Draw a box around a margin note (hagahah) or paragraph to scan just that area (Ctrl+R)")
+        self.btn_scan_region.clicked.connect(self.start_region_selection)
+        v_bar.addWidget(self.btn_scan_region)
+
+        self.btn_split_spread = QPushButton("📖 Split 2-Pg")
+        self.btn_split_spread.setStyleSheet("padding: 3px 7px; font-size: 11.5px;")
+        self.btn_split_spread.setToolTip("Split an open two-page notebook photo into Right Page → Left Page (Hebrew order)")
+        self.btn_split_spread.clicked.connect(self.split_current_two_page_spread)
+        v_bar.addWidget(self.btn_split_spread)
+
         self.btn_contrast = QPushButton(t("btn_contrast"))
-        self.btn_contrast.setStyleSheet("padding: 3px 8px; font-size: 12px;")
+        self.btn_contrast.setStyleSheet("padding: 3px 7px; font-size: 12px;")
         self.btn_contrast.setToolTip(t("btn_contrast_tooltip"))
         self.btn_contrast.clicked.connect(self.toggle_image_contrast)
         v_bar.addWidget(self.btn_contrast)
@@ -866,6 +976,7 @@ class MainWindow(QMainWindow):
             self.editor.set_text("", "")
             self.lbl_status.setText(t("status_ready"))
             self.clear_saved_session()
+            self.purge_pdf_cache()
             self._update_learn_button_status()
 
     def on_page_selected(self, row: int):
@@ -887,11 +998,13 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.lbl_status.setText(f"Error loading image: {e}")
 
-        # Load bounding boxes into viewer if already scanned
-        self.viewer.set_bounding_boxes(pdata.get("lines_boxes", []))
+        # Load bounding boxes & line confidences
+        boxes = pdata.get("lines_boxes", [])
+        self.viewer.set_bounding_boxes(boxes)
+        confs = [ln.get("confidence", 1.0) for ln in boxes if isinstance(ln, dict)]
 
-        # Load text into editor
-        self.editor.set_text(pdata["edited_text"], pdata["raw_text"])
+        # Load text into editor with low-confidence highlights
+        self.editor.set_text(pdata["edited_text"], pdata["raw_text"], confidences=confs)
         self._update_learn_button_status()
         self.save_session_state()
 
@@ -959,7 +1072,8 @@ class MainWindow(QMainWindow):
                 item.setText(f"{p['filename']}\n{t('page_status_scanned')}")
 
             if page_idx == self.current_page_idx:
-                self.editor.set_text(res["text"], res["raw_text"])
+                confs = [ln.get("confidence", 1.0) for ln in res.get("lines", []) if isinstance(ln, dict)]
+                self.editor.set_text(res["text"], res["raw_text"], confidences=confs)
                 self.viewer.set_bounding_boxes(res.get("lines", []))
                 if res["corrections_applied"] > 0:
                     self.lbl_learned_badge.setText(f"Applied {res['corrections_applied']} automatic learned corrections ✓")
@@ -1068,6 +1182,8 @@ class MainWindow(QMainWindow):
     def learn_all_corrections(self, silent: bool = False) -> int:
         """
         Learns corrections across all pages with pending proofreading edits into the ACTIVE profile.
+        When silent=False (user clicked 'Save & Learn'), displays a visual confirmation checklist
+        so users can uncheck accidental rewrites before committing to memory.
         Returns the total count of newly learned rules.
         """
         if 0 <= self.current_page_idx < len(self.pages):
@@ -1087,22 +1203,59 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, t("learn_none_title"), t("learn_none_msg"))
             return 0
 
+        # Extract candidates across all pending pages first
+        candidates = []  # List of (page_num_1based, raw, corr)
+        for idx, p in pending:
+            raw = p.get("raw_text", "")
+            edited = p.get("edited_text", "")
+            pairs = self.learning_engine.extract_corrections(raw, edited)
+            for r_sub, c_sub in pairs:
+                candidates.append((idx + 1, r_sub, c_sub))
+
+        if not candidates:
+            for _, p in pending:
+                p["last_learned_text"] = p.get("edited_text", "")
+            self._update_learn_button_status()
+            self._update_page_list_items()
+            if not silent:
+                QMessageBox.information(self, t("learn_none_title"), t("learn_none_msg"))
+            return 0
+
+        approved_by_page = {}  # page_num_1based -> list of (raw, corr)
+        if not silent:
+            from ui.learn_preview_dialog import LearnPreviewDialog
+            dlg = LearnPreviewDialog(candidates, self.learning_engine.get_active_profile_name(), self)
+            if dlg.exec() != dlg.DialogCode.Accepted:
+                return 0
+            approved_list = dlg.get_approved_pairs()
+            for pg_num, r_sub, c_sub in approved_list:
+                approved_by_page.setdefault(pg_num, []).append((r_sub, c_sub))
+        else:
+            for pg_num, r_sub, c_sub in candidates:
+                approved_by_page.setdefault(pg_num, []).append((r_sub, c_sub))
+
         all_learned = []
         pages_learned = []
 
         for idx, p in pending:
+            pg_num = idx + 1
             raw = p.get("raw_text", "")
             edited = p.get("edited_text", "")
-            learned = self.learning_engine.learn_from_corrections(raw, edited, p.get("filename", ""))
-            p["last_learned_text"] = edited
-            if learned:
+            pg_pairs = approved_by_page.get(pg_num, [])
+            if pg_pairs:
+                learned = self.learning_engine.commit_corrections(
+                    pg_pairs,
+                    page_name=p.get("filename", ""),
+                    raw_text=raw,
+                    corrected_text=edited
+                )
                 all_learned.extend(learned)
-                pages_learned.append(idx + 1)
-            else:
-                p["last_learned_text"] = edited
+                pages_learned.append(pg_num)
+            p["last_learned_text"] = edited
 
         self.update_learned_count_badge()
         self._update_learn_button_status()
+        self._update_page_list_items()
 
         log.info(f"Learned {len(all_learned)} rules across pages {pages_learned} into profile '{self.learning_engine.get_active_profile_name()}'.")
 
@@ -1202,15 +1355,17 @@ class MainWindow(QMainWindow):
                 log.info(f"Auto-learned {learned_count} handwriting corrections during Word (.docx) export.")
                 self.lbl_status.setText(t("export_learned_notice", count=learned_count, profile=self.learning_engine.get_active_profile_name()))
 
-        title, ok1 = QInputDialog.getText(self, t("export_dialog_title"), t("export_title_prompt"), text=t("export_default_title"))
-        if not ok1:
+        from ui.export_dialog import WordExportDialog
+        exp_dlg = WordExportDialog(self)
+        if exp_dlg.exec() != exp_dlg.DialogCode.Accepted:
             return
-        subtitle, ok2 = QInputDialog.getText(self, t("export_dialog_title"), t("export_subtitle_prompt"), text="")
-        if not ok2:
-            return
-        author, ok3 = QInputDialog.getText(self, t("export_dialog_title"), t("export_author_prompt"), text="")
-        if not ok3:
-            return
+        opts = exp_dlg.get_options()
+        title = opts["title"]
+        subtitle = opts["subtitle"]
+        author = opts["author"]
+        layout_mode = opts["layout_mode"]
+        font_name = opts["font_name"]
+        include_headers = opts["include_page_headers"]
 
         # Choose destination file
         safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '_', '-')).strip() or "Notes"
@@ -1243,7 +1398,9 @@ class MainWindow(QMainWindow):
                 document_title=title,
                 document_subtitle=subtitle,
                 author_name=author_formatted,
-                font_name="David"
+                font_name=font_name,
+                layout_mode=layout_mode,
+                include_page_headers=include_headers
             )
             resp = QMessageBox.question(
                 self, t("export_success_title"),
@@ -1308,14 +1465,18 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _start_startup_update_check(self):
-        """Silently checks for updates in background after startup (if enabled)."""
+        """Silently checks for updates in background after startup (if enabled & not strict air-gap)."""
         try:
-            from ui.update_dialog import StartupUpdateWorker, CURRENT_VERSION
+            from ui.update_dialog import StartupUpdateWorker, CURRENT_VERSION, is_strict_offline_mode
+            if is_strict_offline_mode():
+                log.info("Strict Air-Gap Mode active: skipping background online update check.")
+                return
+            log.info(f"Starting background update check (current version: v{CURRENT_VERSION})...")
             self._startup_update_worker = StartupUpdateWorker(CURRENT_VERSION)
             self._startup_update_worker.update_available.connect(self._on_startup_update_found)
             self._startup_update_worker.start()
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug(f"Startup update check skipped: {e}")
 
     def _on_startup_update_found(self, data: dict):
         """Triggered when background worker finds an available update."""
@@ -1548,6 +1709,309 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def purge_pdf_cache(self):
+        """Cleans up temporary rendered PDF page PNGs in %APPDATA%\\OhrHaKsav\\pdf_cache."""
+        try:
+            import shutil
+            cache_dir = os.path.join(get_app_data_dir(), "pdf_cache")
+            if os.path.exists(cache_dir):
+                shutil.rmtree(cache_dir, ignore_errors=True)
+                log.info("Purged temporary pdf_cache directory.")
+        except Exception as e:
+            log.debug(f"pdf_cache cleanup note: {e}")
+
+    def privacy_wipe_session(self):
+        """
+        Shared-workstation Privacy Wipe: clears all attached pages, session recovery file,
+        and temporary PDF/split image caches while keeping user handwriting profiles intact.
+        """
+        res = QMessageBox.question(
+            self,
+            "🧹 Privacy Wipe (Clear Session & Temp Cache)",
+            "This will clear all open notebook pages, remove session recovery drafts, and purge temporary cached PDF/split images.\n\n"
+            "Your saved handwriting profiles and learned words will NOT be deleted.\n\nContinue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if res != QMessageBox.StandardButton.Yes:
+            return
+
+        self.pages.clear()
+        self.list_pages.clear()
+        self.current_page_idx = -1
+        self.viewer.scene.clear()
+        self.editor.set_text("", "")
+        self.clear_saved_session()
+        self.purge_pdf_cache()
+        try:
+            import shutil
+            split_dir = os.path.join(get_app_data_dir(), "split_cache")
+            if os.path.exists(split_dir):
+                shutil.rmtree(split_dir, ignore_errors=True)
+        except Exception:
+            pass
+        self._update_learn_button_status()
+        self.lbl_status.setText("Privacy wipe complete. Session & temporary image cache cleared ✓")
+        log.info("Privacy wipe executed by user.")
+
+    # --- Page Reordering ---
+    def _rebuild_sidebar_list(self, select_idx: int):
+        self.list_pages.blockSignals(True)
+        self.list_pages.clear()
+        for p in self.pages:
+            item = QListWidgetItem()
+            item.setText(f"{p['filename']}\n{p.get('status', t('page_status_ready'))}")
+            try:
+                pix = QPixmap(p["path"])
+                if not pix.isNull():
+                    thumb = pix.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    item.setIcon(QIcon(thumb))
+            except Exception:
+                pass
+            self.list_pages.addItem(item)
+        self.list_pages.blockSignals(False)
+        self._update_page_list_items()
+        if 0 <= select_idx < len(self.pages):
+            self.current_page_idx = -1
+            self.list_pages.setCurrentRow(select_idx)
+
+    def move_page_up(self):
+        row = self.list_pages.currentRow()
+        if row <= 0 or row >= len(self.pages):
+            return
+        if 0 <= self.current_page_idx < len(self.pages):
+            self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+        self.pages[row - 1], self.pages[row] = self.pages[row], self.pages[row - 1]
+        self._rebuild_sidebar_list(row - 1)
+        self.save_session_state()
+
+    def move_page_down(self):
+        row = self.list_pages.currentRow()
+        if row < 0 or row >= len(self.pages) - 1:
+            return
+        if 0 <= self.current_page_idx < len(self.pages):
+            self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+        self.pages[row + 1], self.pages[row] = self.pages[row], self.pages[row + 1]
+        self._rebuild_sidebar_list(row + 1)
+        self.save_session_state()
+
+    def _on_pages_reordered(self, parent, start, end, destination, dest_row):
+        """Syncs self.pages list order when the user drags-and-drops thumbnails in the sidebar."""
+        if not (0 <= start < len(self.pages)):
+            return
+        if 0 <= self.current_page_idx < len(self.pages):
+            self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+        moved_item = self.pages.pop(start)
+        insert_idx = dest_row if dest_row <= start else dest_row - 1
+        insert_idx = max(0, min(insert_idx, len(self.pages)))
+        self.pages.insert(insert_idx, moved_item)
+        self.current_page_idx = insert_idx
+        self._update_page_list_items()
+        self.save_session_state()
+
+    # --- Saved Notebook Projects (.ksav) ---
+    def save_notebook_project(self):
+        if not self.pages:
+            QMessageBox.information(self, "Notice", "Please attach pages before saving a notebook project.")
+            return
+        if 0 <= self.current_page_idx < len(self.pages):
+            self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+
+        docs_dir = os.path.join(os.path.expanduser("~"), "Documents")
+        default_path = os.path.join(docs_dir, "My_Torah_Notebook.ksav")
+        out_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Notebook Project", default_path, "Ohr HaKsav Notebook Project (*.ksav);;All Files (*)"
+        )
+        if not out_path:
+            return
+        if not out_path.lower().endswith(".ksav"):
+            out_path += ".ksav"
+
+        try:
+            from datetime import datetime
+            proj_data = {
+                "format": "ohr_haksav_project_v1",
+                "saved_at": datetime.now().isoformat(),
+                "active_page_idx": max(0, self.current_page_idx),
+                "profile_id": self.learning_engine.get_active_profile_id(),
+                "pages": self.pages
+            }
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(proj_data, f, ensure_ascii=False, indent=2)
+            self.lbl_status.setText(f"Saved notebook project ({len(self.pages)} pages) to {os.path.basename(out_path)} ✓")
+            log.info(f"Saved .ksav project to {out_path} ({len(self.pages)} pages).")
+        except Exception as e:
+            QMessageBox.critical(self, "Save Project Error", f"Failed to save project:\n{e}")
+
+    def open_notebook_project(self):
+        docs_dir = os.path.join(os.path.expanduser("~"), "Documents")
+        in_path, _ = QFileDialog.getOpenFileName(
+            self, "Open Notebook Project", docs_dir, "Ohr HaKsav Notebook Project (*.ksav);;All Files (*)"
+        )
+        if not in_path:
+            return
+        try:
+            with open(in_path, "r", encoding="utf-8") as f:
+                proj_data = json.load(f)
+            loaded_pages = proj_data.get("pages", [])
+            valid_pages = [p for p in loaded_pages if os.path.exists(p.get("path", ""))]
+            missing = len(loaded_pages) - len(valid_pages)
+            if not valid_pages:
+                QMessageBox.warning(self, "Project Open Warning", "None of the original page images referenced by this project were found on disk.")
+                return
+            self.pages = valid_pages
+            target_idx = min(proj_data.get("active_page_idx", 0), len(self.pages) - 1)
+            self._rebuild_sidebar_list(max(0, target_idx))
+            self._update_learn_button_status()
+            self.save_session_state()
+            msg = f"Loaded notebook project '{os.path.basename(in_path)}' ({len(valid_pages)} pages) ✓"
+            if missing > 0:
+                msg += f" ({missing} missing image file(s) skipped)"
+            self.lbl_status.setText(msg)
+            log.info(msg)
+        except Exception as e:
+            QMessageBox.critical(self, "Open Project Error", f"Failed to open notebook project:\n{e}")
+
+    # --- ROI Lasso Region Scan (Margin Notes / Hagahos) ---
+    def start_region_selection(self):
+        if self.current_page_idx < 0 or self.current_page_idx >= len(self.pages):
+            QMessageBox.information(self, "Notice", "Please select a notebook page first.")
+            return
+        self.viewer.set_selection_mode(True)
+        self.lbl_status.setText("✂ Draw a box on the page image around a margin note or paragraph to scan just that region...")
+
+    def _on_region_selected(self, box: tuple):
+        if self.current_page_idx < 0 or self.current_page_idx >= len(self.pages):
+            return
+        pdata = self.pages[self.current_page_idx]
+        self.lbl_status.setText("✂ Scanning selected region...")
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        self._region_worker = RegionOCRWorker(
+            self.ocr_engine, self.learning_engine, pdata["path"], pdata.get("rotation", 0), box
+        )
+        self._region_worker.finished.connect(self._on_region_ocr_finished)
+        self._region_worker.error.connect(self._on_region_ocr_error)
+        self._region_worker.start()
+
+    def _on_region_ocr_finished(self, text: str, corrections: int):
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setRange(0, 100)
+        if text.strip():
+            cursor = self.editor.text_edit.textCursor()
+            prefix = "\n" if self.editor.get_text().strip() else ""
+            cursor.insertText(prefix + text.strip() + "\n")
+            self.lbl_status.setText(f"✂ Region scanned & inserted ({corrections} learned rules applied) ✓")
+            log.info(f"Region OCR succeeded: {len(text.splitlines())} line(s) inserted.")
+        else:
+            self.lbl_status.setText("✂ No handwriting text detected inside the selected box.")
+
+    def _on_region_ocr_error(self, err_msg: str):
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setRange(0, 100)
+        QMessageBox.warning(self, "Region Scan Error", f"Could not scan selected region:\n{err_msg}")
+
+    # --- Open Two-Page Notebook Auto-Split (Hebrew RTL: Right -> Left) ---
+    def split_current_two_page_spread(self):
+        if self.current_page_idx < 0 or self.current_page_idx >= len(self.pages):
+            QMessageBox.information(self, "Notice", "Please select an open two-page notebook photo first.")
+            return
+        pdata = self.pages[self.current_page_idx]
+        try:
+            from PIL import ImageOps
+            pil_img = ImageOps.exif_transpose(Image.open(pdata["path"]))
+            if pdata.get("rotation", 0) % 360 != 0:
+                pil_img = pil_img.rotate(-pdata["rotation"], expand=True)
+
+            split_res = self.ocr_engine.detect_and_split_two_page_spread(pil_img, force=True)
+            if not split_res:
+                QMessageBox.warning(self, "Split Failed", "Could not split this image into two pages.")
+                return
+
+            right_img, left_img = split_res
+            base = os.path.splitext(pdata["filename"])[0]
+            split_dir = os.path.join(get_app_data_dir(), "split_cache")
+            os.makedirs(split_dir, exist_ok=True)
+            right_path = os.path.join(split_dir, f"{base}_1_Right.png")
+            left_path = os.path.join(split_dir, f"{base}_2_Left.png")
+            right_img.save(right_path)
+            left_img.save(left_path)
+
+            idx = self.current_page_idx
+            new_right = {
+                "path": right_path,
+                "filename": os.path.basename(right_path),
+                "rotation": 0,
+                "raw_text": "",
+                "edited_text": "",
+                "last_learned_text": "",
+                "status": t("page_status_ready"),
+                "lines_boxes": []
+            }
+            new_left = {
+                "path": left_path,
+                "filename": os.path.basename(left_path),
+                "rotation": 0,
+                "raw_text": "",
+                "edited_text": "",
+                "last_learned_text": "",
+                "status": t("page_status_ready"),
+                "lines_boxes": []
+            }
+            # Replace spread photo with Right Page then Left Page (Hebrew reading order)
+            self.pages[idx : idx + 1] = [new_right, new_left]
+            self._rebuild_sidebar_list(idx)
+            self.save_session_state()
+            self.lbl_status.setText(f"📖 Split spread into Right Page → Left Page (Hebrew order) ✓")
+            log.info(f"Split two-page spread '{pdata['filename']}' into Right and Left pages.")
+        except Exception as e:
+            QMessageBox.critical(self, "Split Spread Error", f"Failed to split two-page spread:\n{e}")
+
+    # --- OCR Accuracy & Image Cleaning Toggles ---
+    def _toggle_high_accuracy(self, checked: bool):
+        self.ocr_engine.set_accuracy_mode(checked)
+        mode_str = "High-Accuracy (Beam Search)" if checked else "Fast (Greedy)"
+        self.lbl_status.setText(f"OCR Decoding Mode set to: {mode_str}")
+        log.info(f"OCR accuracy mode changed to: {mode_str}")
+
+    def _toggle_clean_shadows(self, checked: bool):
+        self.ocr_engine.clean_shadows_lines = bool(checked)
+        state = "Enabled" if checked else "Disabled"
+        self.lbl_status.setText(f"Shadow Removal & Pale Blue Ruled-Line Suppression: {state}")
+        log.info(f"Shadow & ruled-line suppression: {state}")
+
+    # --- Whole-Notebook Find & Replace ---
+    def _replace_all_across_notebook(self, query: str, repl: str):
+        if not query or not self.pages:
+            return
+        if 0 <= self.current_page_idx < len(self.pages):
+            self.pages[self.current_page_idx]["edited_text"] = self.editor.get_text()
+
+        total_replacements = 0
+        pages_affected = 0
+        for p in self.pages:
+            txt = p.get("edited_text", "")
+            cnt = txt.count(query)
+            if cnt > 0:
+                p["edited_text"] = txt.replace(query, repl)
+                total_replacements += cnt
+                pages_affected += 1
+
+        if 0 <= self.current_page_idx < len(self.pages):
+            pdata = self.pages[self.current_page_idx]
+            boxes = pdata.get("lines_boxes", [])
+            confs = [ln.get("confidence", 1.0) for ln in boxes if isinstance(ln, dict)]
+            self.editor.set_text(pdata["edited_text"], pdata["raw_text"], confidences=confs)
+
+        self._update_learn_button_status()
+        self._update_page_list_items()
+        self.save_session_state()
+        self.lbl_status.setText(f"Replaced {total_replacements} occurrence(s) of '{query}' across {pages_affected} page(s) ✓")
+        QMessageBox.information(
+            self,
+            "Replace All (Notebook)",
+            f"Replaced {total_replacements} occurrence(s) of '{query}' with '{repl}' across {pages_affected} page(s)!"
+        )
+
     def closeEvent(self, event):
         """
         Intercepts window close events (X button, Alt+F4, or File > Exit).
@@ -1612,6 +2076,13 @@ class MainWindow(QMainWindow):
             try:
                 self._prewarm_worker.quit()
                 self._prewarm_worker.wait(1000)
+            except Exception:
+                pass
+
+        if hasattr(self, "_region_worker") and self._region_worker and self._region_worker.isRunning():
+            try:
+                self._region_worker.quit()
+                self._region_worker.wait(1000)
             except Exception:
                 pass
 

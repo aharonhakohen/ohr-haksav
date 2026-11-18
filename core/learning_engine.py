@@ -726,56 +726,82 @@ class LearningEngine:
             conn.commit()
             return cursor.rowcount > 0
 
-    def learn_from_corrections(self, raw_text: str, corrected_text: str, page_name: str = "") -> List[Tuple[str, str]]:
+    def extract_corrections(self, raw_text: str, corrected_text: str) -> List[Tuple[str, str]]:
         """
-        Learns corrections from user proofreading into the ACTIVE profile.
-        Returns list of (raw, corrected) pairs learned.
+        Extracts candidate (raw, corrected) replacement pairs from proofreading edits
+        WITHOUT writing to the database. Used for visual proofreading confirmation.
         """
         raw_tokens = [w for w in re.split(r'(\s+|[.,:;!?"\'\(\)\[\]])', raw_text) if w and not w.isspace()]
         corr_tokens = [w for w in re.split(r'(\s+|[.,:;!?"\'\(\)\[\]])', corrected_text) if w and not w.isspace()]
 
         matcher = difflib.SequenceMatcher(None, raw_tokens, corr_tokens)
-        learned = []
+        candidates = []
+        seen = set()
 
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == 'replace':
+                raw_sub = " ".join(raw_tokens[i1:i2]).strip()
+                corr_sub = " ".join(corr_tokens[j1:j2]).strip()
+                if 0 < len(raw_tokens[i1:i2]) <= 3 and 0 < len(corr_tokens[j1:j2]) <= 3:
+                    if raw_sub and corr_sub and raw_sub != corr_sub:
+                        pair = (raw_sub, corr_sub)
+                        if pair not in seen:
+                            seen.add(pair)
+                            candidates.append(pair)
+        return candidates
+
+    def commit_corrections(
+        self,
+        pairs: List[Tuple[str, str]],
+        page_name: str = "",
+        raw_text: str = "",
+        corrected_text: str = ""
+    ) -> List[Tuple[str, str]]:
+        """Saves an approved list of (raw, corrected) pairs into the ACTIVE profile."""
+        learned = []
         now = datetime.now().isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-                if tag == 'replace':
-                    raw_sub = " ".join(raw_tokens[i1:i2]).strip()
-                    corr_sub = " ".join(corr_tokens[j1:j2]).strip()
-                    # Learn single words or short phrases up to 3 tokens
-                    if 0 < len(raw_tokens[i1:i2]) <= 3 and 0 < len(corr_tokens[j1:j2]) <= 3:
-                        if raw_sub and corr_sub and raw_sub != corr_sub:
-                            cursor.execute("""
-                                INSERT INTO replacements (raw_text, corrected_text, count, is_active, created_at, updated_at)
-                                VALUES (?, ?, 1, 1, ?, ?)
-                                ON CONFLICT(raw_text) DO UPDATE SET
-                                    corrected_text = excluded.corrected_text,
-                                    count = replacements.count + 1,
-                                    updated_at = excluded.updated_at
-                            """, (raw_sub, corr_sub, now, now))
-                            learned.append((raw_sub, corr_sub))
+            for raw_sub, corr_sub in pairs:
+                raw_sub = raw_sub.strip()
+                corr_sub = corr_sub.strip()
+                if raw_sub and corr_sub and raw_sub != corr_sub:
+                    cursor.execute("""
+                        INSERT INTO replacements (raw_text, corrected_text, count, is_active, created_at, updated_at)
+                        VALUES (?, ?, 1, 1, ?, ?)
+                        ON CONFLICT(raw_text) DO UPDATE SET
+                            corrected_text = excluded.corrected_text,
+                            count = replacements.count + 1,
+                            updated_at = excluded.updated_at
+                    """, (raw_sub, corr_sub, now, now))
+                    learned.append((raw_sub, corr_sub))
 
-            # Record in history
             if page_name or learned:
                 cursor.execute("""
                     INSERT INTO history (page_name, raw_line, corrected_line, timestamp)
                     VALUES (?, ?, ?, ?)
                 """, (page_name, raw_text[:500], corrected_text[:500], now))
 
-            # Update vocabulary with all words in corrected text
-            words = re.findall(r'[\u0590-\u05FF]{2,}', corrected_text)
-            for w in set(words):
-                cursor.execute("""
-                    INSERT INTO vocabulary (word, frequency, category)
-                    VALUES (?, 1, 'learned')
-                    ON CONFLICT(word) DO UPDATE SET frequency = vocabulary.frequency + 1
-                """, (w,))
+            if corrected_text:
+                words = re.findall(r'[\u0590-\u05FF]{2,}', corrected_text)
+                for w in set(words):
+                    cursor.execute("""
+                        INSERT INTO vocabulary (word, frequency, category)
+                        VALUES (?, 1, 'learned')
+                        ON CONFLICT(word) DO UPDATE SET frequency = vocabulary.frequency + 1
+                    """, (w,))
 
             conn.commit()
 
         return learned
+
+    def learn_from_corrections(self, raw_text: str, corrected_text: str, page_name: str = "") -> List[Tuple[str, str]]:
+        """
+        Learns corrections from user proofreading into the ACTIVE profile.
+        Returns list of (raw, corrected) pairs learned.
+        """
+        pairs = self.extract_corrections(raw_text, corrected_text)
+        return self.commit_corrections(pairs, page_name=page_name, raw_text=raw_text, corrected_text=corrected_text)
 
     def apply_corrections(self, text: str) -> Tuple[str, List[Tuple[str, str]]]:
         """

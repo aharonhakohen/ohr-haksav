@@ -161,12 +161,17 @@ Ohr HaKsav has a built-in lexicon of common Talmudic, halachic, and rabbinic abb
 
 | Shortcut | Action | Description |
 | :--- | :--- | :--- |
-| <kbd>Ctrl+O</kbd> | **Add Pages** | Attach photos or scans from your computer |
+| <kbd>Ctrl+O</kbd> | **Add Pages / PDFs** | Attach photos, scans, or multi-page PDFs from your computer |
 | <kbd>F5</kbd> | **Scan Current Page** | Run offline neural OCR on the active page |
 | <kbd>Shift+F5</kbd> | **Scan All Pages** | Batch OCR all attached notebook pages |
-| <kbd>Ctrl+L</kbd> | **Save & Learn Mistakes** | Train the handwriting memory bank with your corrections |
+| <kbd>Ctrl+R</kbd> | **Scan Drawn Region** | Lasso a margin note (*hagahah*) or paragraph to scan just that area |
+| <kbd>F8</kbd> | **Next Uncertain Line** | Jump directly to the next low-confidence OCR line highlighted in amber |
+| <kbd>Ctrl+F</kbd> / <kbd>Ctrl+H</kbd> | **Find & Replace** | Search & replace Hebrew words on the active page or across the entire notebook |
+| <kbd>Ctrl+L</kbd> | **Save & Learn Mistakes** | Review & train the handwriting memory bank with your corrections |
 | <kbd>Ctrl+M</kbd> | **Memory Studio** | Open the profile and replacement rule manager |
-| <kbd>Ctrl+E</kbd> | **Export to Word (.docx)** | Export formatted Microsoft Word document |
+| <kbd>Ctrl+Alt+S</kbd> | **Save Project (.ksav)** | Save named notebook project preserving page order, rotations, and edits |
+| <kbd>Ctrl+Shift+O</kbd> | **Open Project (.ksav)** | Reopen a previously saved multi-page notebook project |
+| <kbd>Ctrl+E</kbd> | **Export to Word (.docx)** | Export formatted Word document (Standard, Continuous, or Two-Column Sefer) |
 | <kbd>Ctrl+S</kbd> | **Export to Text (.txt)** | Save plain UTF-8 text file |
 | <kbd>Ctrl+I</kbd> | **Ink Enhancer / Contrast** | Boost faint pencil or light ink strokes |
 | <kbd>Ctrl+]</kbd> | **Rotate Clockwise** | Rotate page 90 degrees CW |
@@ -186,13 +191,15 @@ Ohr HaKsav has a built-in lexicon of common Talmudic, halachic, and rabbinic abb
 ### Complete Privacy & Zero Cloud Dependency
 * **100% Local Execution:** All OCR models, image transformations, tokenizers, and databases run on your local PC.
 * **No Telemetry / No Cloud APIs:** No personal data, handwritten images, notes, or mistake logs leave your computer.
+* **Strict Air-Gap / Zero-Network Policy:** Set `OHR_HAKSAV_OFFLINE_ONLY=1` or enable **Strict Air-Gap Mode** in Update Settings to completely block all outbound internet probes (100% TAG / Meshimer / air-gap safe).
+* **Shared-Computer Privacy Wipe:** Use **File &rarr; Privacy Wipe** on shared Yeshiva lab computers to clear active pages, session drafts, and temporary cached PDF/split PNGs while preserving user profiles.
 * **Protected Roaming User Data:** Your profiles, learned handwriting memory, and settings are saved under `%APPDATA%\OhrHaKsav`. Uninstalling or upgrading the app program files will never delete your training data.
 
 ### Institutional & Windows Server Domain Administration
 For network administrators in Yeshivas, computer centers, and school domains:
 
-1. **Instant Pre-Flight Socket Check (8ms):** The updater tests socket connectivity on port 53 before issuing network calls. On air-gapped or domain machines without internet, it immediately falls back to offline mode with zero timeout delays.
-2. **UNC Server Share Updates:**
+1. **SHA-256 Integrity Verification & Authenticode Signing:** Every setup installer and lightweight delta patch is verified against its published SHA-256 digest before execution. Domain admins can also sign internal builds using `scripts/create_internal_domain_cert.ps1` and `OHR_HAKSAV_CERT_THUMBPRINT`.
+2. **UNC Server Share & Lightweight Delta Patch Updates:**
    * In **Update Source & Settings**, set the update source to a local UNC network share (e.g. `\\newltcserver\Installs\OhrHaKsav`).
-   * When an administrator drops `version.json` and `OhrHaKsav_Setup_v1.3.5.exe` onto the network share, all network workstations will automatically detect and install the update locally without internet access.
+   * Drop `version.json`, `OhrHaKsav_Patch_v1.4.0.zip` (~30–50 MB fast update), and `OhrHaKsav_Setup_v1.4.0.exe` onto the network share. Workstations automatically verify SHA-256 and apply lightweight patches in seconds with zero internet traffic.
 3. **Silent Background Update Polling:** The app quietly checks for updates on launch without interrupting teachers or students, gently displaying an in-app banner across the top toolbar when a release is ready.

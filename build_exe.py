@@ -1,27 +1,79 @@
 # -*- coding: utf-8 -*-
 """
-Ohr HaKsav - Automated Build Script for Standalone Executable & Offline Setup Wizard
+Ohr HaKsav - Automated Build Script for Standalone Executable, Delta Patch & Offline Setup Wizard (v1.4.0)
 Bundles Python, PyQt6, PyTorch CPU, Mishkefet-v1 model assets, 3D icons, and offline zip payload.
-Optimized to exclude unused build dependencies (transformers, scipy, matplotlib, pandas, etc.)
+Also builds:
+  - Lightweight Code-Only Delta Patch (OhrHaKsav_Patch_vX.Y.Z.zip) for fast updates (~90% smaller)
+  - SHA-256 cryptographic checksums injected automatically into version.json & public/version.json
+  - Optional Windows Authenticode code signing via signtool.exe (OHR_HAKSAV_CERT_PFX or OHR_HAKSAV_CERT_THUMBPRINT)
 """
 
 import os
 import sys
 import json
 import shutil
+import hashlib
 import zipfile
 import subprocess
 import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
 def get_version() -> str:
     vpath = os.path.join(BASE_DIR, "version.json")
     try:
         with open(vpath, "r", encoding="utf-8") as f:
-            return json.load(f).get("version", "1.3.6")
+            return json.load(f).get("version", "1.4.0")
     except Exception:
-        return "1.3.6"
+        return "1.4.0"
+
+
+def compute_sha256(file_path: str) -> str:
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        while True:
+            chunk = f.read(1024 * 256)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest().lower()
+
+
+def sign_executable(exe_path: str) -> bool:
+    """
+    Signs a Windows executable with Authenticode SHA-256 if signing environment variables are set:
+      - OHR_HAKSAV_CERT_PFX (+ optional OHR_HAKSAV_CERT_PASS)
+      - OR OHR_HAKSAV_CERT_THUMBPRINT (Windows Certificate Store)
+    """
+    pfx = os.environ.get("OHR_HAKSAV_CERT_PFX", "").strip()
+    pfx_pass = os.environ.get("OHR_HAKSAV_CERT_PASS", "").strip()
+    thumb = os.environ.get("OHR_HAKSAV_CERT_THUMBPRINT", "").strip()
+    if not pfx and not thumb:
+        return False
+
+    signtool = shutil.which("signtool") or shutil.which("signtool.exe")
+    if not signtool:
+        print(f"Notice: Code signing configured, but signtool.exe was not found on PATH. Skipping signing for {os.path.basename(exe_path)}.")
+        return False
+
+    cmd = [signtool, "sign", "/fd", "SHA256", "/tr", "http://timestamp.digicert.com", "/td", "SHA256"]
+    if pfx and os.path.exists(pfx):
+        cmd.extend(["/f", pfx])
+        if pfx_pass:
+            cmd.extend(["/p", pfx_pass])
+    elif thumb:
+        cmd.extend(["/sha1", thumb])
+    cmd.append(exe_path)
+
+    try:
+        subprocess.check_call(cmd)
+        print(f" -> Signed executable (Authenticode SHA-256): {os.path.basename(exe_path)}")
+        return True
+    except Exception as e:
+        print(f"Warning: Authenticode signing failed for {os.path.basename(exe_path)}: {e}")
+        return False
+
 
 def generate_version_info(version_str: str, original_filename: str, description: str, out_path: str) -> str:
     """Generate a PyInstaller-compatible Windows Version Info resource file."""
@@ -55,7 +107,7 @@ VSVersionInfo(
         StringStruct('OriginalFilename', '{original_filename}'),
         StringStruct('ProductName', 'Ohr HaKsav (אור הכתב)'),
         StringStruct('ProductVersion', '{version_str}.0')])
-      ]), 
+      ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]
 )
@@ -64,8 +116,9 @@ VSVersionInfo(
         f.write(content)
     return out_path
 
+
 def create_payload_zip(src_dir: str, out_zip: str):
-    print(f"\nCompressing offline application payload to {out_zip}...")
+    print(f"\nCompressing full offline application payload to {out_zip}...")
     t0 = time.time()
     with zipfile.ZipFile(out_zip, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for root, dirs, files in os.walk(src_dir):
@@ -74,12 +127,57 @@ def create_payload_zip(src_dir: str, out_zip: str):
                 rel_path = os.path.relpath(full_path, src_dir)
                 zf.write(full_path, rel_path)
     mb = os.path.getsize(out_zip) / (1024 * 1024)
-    print(f"[SUCCESS] Payload created: {mb:.1f} MB in {time.time()-t0:.1f}s")
+    print(f"[SUCCESS] Full payload created: {mb:.1f} MB in {time.time()-t0:.1f}s")
+
+
+def create_delta_patch_zip(src_dir: str, out_zip: str):
+    """
+    Creates a lightweight code-only delta patch zip excluding heavy unchanging binary engines
+    (torch, PyQt6, cv2, fitz, model_assets, numpy, PIL).
+    Updates only OhrHaKsav.exe, version.json, assets, and base_library.zip (~25-50 MB instead of 468 MB!).
+    """
+    print(f"\nPackaging lightweight code-only delta patch to {out_zip}...")
+    t0 = time.time()
+    skip_dirs = {
+        "torch", "PyQt6", "cv2", "fitz", "pymupdf", "model_assets",
+        "numpy", "PIL", "scipy", "sklearn", "sympy", "llvmlite"
+    }
+    with zipfile.ZipFile(out_zip, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for root, dirs, files in os.walk(src_dir):
+            # Prune heavy engine directories inside _internal
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            rel_root = os.path.relpath(root, src_dir)
+            for f in files:
+                # Skip large binary DLLs inside _internal (unchanging runtime libraries)
+                if rel_root != "." and f.lower().endswith((".dll", ".pyd", ".so")):
+                    continue
+                full_path = os.path.join(root, f)
+                rel_path = os.path.relpath(full_path, src_dir)
+                zf.write(full_path, rel_path)
+    mb = os.path.getsize(out_zip) / (1024 * 1024)
+    print(f"[SUCCESS] Delta patch created: {mb:.1f} MB in {time.time()-t0:.1f}s")
+
+
+def update_version_checksums(installer_sha: str, patch_sha: str):
+    """Injects verified SHA-256 checksums into both version.json and public/version.json."""
+    for vpath in [os.path.join(BASE_DIR, "version.json"), os.path.join(BASE_DIR, "public", "version.json")]:
+        if os.path.exists(vpath):
+            try:
+                with open(vpath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                data["installerSha256"] = installer_sha
+                data["patchSha256"] = patch_sha
+                with open(vpath, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                print(f" -> Updated SHA-256 checksums in {os.path.relpath(vpath, BASE_DIR)}")
+            except Exception as e:
+                print(f"Warning: Could not update checksums in {vpath}: {e}")
+
 
 def build(force_rebuild: bool = False):
     version = get_version()
     print("=" * 70)
-    print(f"Building Ohr HaKsav v{version} Standalone Offline Package")
+    print(f"Building Ohr HaKsav v{version} Standalone Offline Package & Delta Patch")
     print("=" * 70)
 
     dist_dir = os.path.join(BASE_DIR, "dist")
@@ -88,23 +186,29 @@ def build(force_rebuild: bool = False):
     app_output = os.path.join(dist_dir, "OhrHaKsav")
     app_exe = os.path.join(app_output, "OhrHaKsav.exe")
     payload_zip = os.path.join(dist_dir, "payload.zip")
+    patch_zip = os.path.join(dist_dir, f"OhrHaKsav_Patch_v{version}.zip")
     setup_exe = os.path.join(dist_dir, "OhrHaKsav_Setup.exe")
 
-    # Determine if rebuild of OhrHaKsav.exe is needed
     core_files = [
         os.path.join(BASE_DIR, "version.json"),
         os.path.join(BASE_DIR, "main.py"),
         os.path.join(BASE_DIR, "ui", "main_window.py"),
+        os.path.join(BASE_DIR, "ui", "image_viewer.py"),
         os.path.join(BASE_DIR, "ui", "dictionary_dialog.py"),
+        os.path.join(BASE_DIR, "ui", "learn_preview_dialog.py"),
+        os.path.join(BASE_DIR, "ui", "export_dialog.py"),
         os.path.join(BASE_DIR, "ui", "text_editor.py"),
         os.path.join(BASE_DIR, "ui", "update_dialog.py"),
         os.path.join(BASE_DIR, "ui", "update_banner.py"),
         os.path.join(BASE_DIR, "ui", "help_dialog.py"),
+        os.path.join(BASE_DIR, "ui", "about_dialog.py"),
+        os.path.join(BASE_DIR, "ui", "splash_screen.py"),
         os.path.join(BASE_DIR, "ui", "theme.py"),
         os.path.join(BASE_DIR, "installer", "setup_gui.py"),
         os.path.join(BASE_DIR, "ui", "i18n.py"),
         os.path.join(BASE_DIR, "core", "learning_engine.py"),
         os.path.join(BASE_DIR, "core", "ocr_engine.py"),
+        os.path.join(BASE_DIR, "core", "docx_exporter.py"),
         os.path.join(BASE_DIR, "core", "logger.py"),
         ico_path
     ]
@@ -117,13 +221,13 @@ def build(force_rebuild: bool = False):
                 break
 
     app_version_info = generate_version_info(
-        version, "OhrHaKsav.exe", 
-        "Ohr HaKsav - Offline Torah Notes & Hebrew Handwriting OCR Studio", 
+        version, "OhrHaKsav.exe",
+        "Ohr HaKsav - Offline Torah Notes & Hebrew Handwriting OCR Studio",
         os.path.join(BASE_DIR, "app_version_info.txt")
     )
 
     if needs_app_rebuild:
-        print(f"\n[1/3] Compiling OhrHaKsav.exe (v{version}) directory with optimizations & embedded version info...")
+        print(f"\n[1/4] Compiling OhrHaKsav.exe (v{version}) directory with optimizations & embedded version info...")
         if os.path.exists(app_output):
             shutil.rmtree(app_output, ignore_errors=True)
         cmd = [
@@ -146,7 +250,6 @@ def build(force_rebuild: bool = False):
             "--hidden-import", "core.hebocr.recognize",
             "--hidden-import", "core.hebocr.wordlm",
             "--hidden-import", "core.hebocr.lm",
-            # Optimization: Exclude unused heavy build dependencies to slim down package
             "--exclude-module", "transformers",
             "--exclude-module", "scipy",
             "--exclude-module", "matplotlib",
@@ -159,30 +262,34 @@ def build(force_rebuild: bool = False):
             os.path.join(BASE_DIR, "main.py")
         ]
         subprocess.check_call(cmd, cwd=BASE_DIR)
-        
-        # Also create a version-named copy in app_output for explicit version visibility
+
+        sign_executable(app_exe)
         versioned_app_exe = os.path.join(app_output, f"OhrHaKsav_v{version}.exe")
         shutil.copy2(app_exe, versioned_app_exe)
         print(f" -> Created version-labeled binary: {versioned_app_exe}")
     else:
-        print(f"\n[1/3] Existing OhrHaKsav application up-to-date at: {app_output}")
+        print(f"\n[1/4] Existing OhrHaKsav application up-to-date at: {app_output}")
 
-    # 2. Package offline payload.zip
+    # 2. Package lightweight code-only delta patch zip
+    print("\n[2/4] Building Lightweight Delta Patch...")
+    create_delta_patch_zip(app_output, patch_zip)
+
+    # 3. Package offline payload.zip
     if not os.path.exists(payload_zip) or os.path.getmtime(payload_zip) < os.path.getmtime(app_exe):
         create_payload_zip(app_output, payload_zip)
     else:
-        print(f"\n[2/3] Existing payload.zip up-to-date ({os.path.getsize(payload_zip)/(1024*1024):.1f} MB)")
+        print(f"\n[3/4] Existing payload.zip up-to-date ({os.path.getsize(payload_zip)/(1024*1024):.1f} MB)")
 
-    # 3. Build Standalone Offline Setup Wizard with version in filename and embedded version resource
+    # 4. Build Standalone Offline Setup Wizard with version in filename and embedded version resource
     setup_name = f"OhrHaKsav_Setup_v{version}"
     setup_versioned_exe = os.path.join(dist_dir, f"{setup_name}.exe")
     setup_version_info = generate_version_info(
-        version, f"{setup_name}.exe", 
-        "Ohr HaKsav - Offline Setup Wizard", 
+        version, f"{setup_name}.exe",
+        "Ohr HaKsav - Offline Setup Wizard",
         os.path.join(BASE_DIR, "setup_version_info.txt")
     )
 
-    print(f"\n[3/3] Compiling {setup_name}.exe Self-Extracting Installer Wizard with embedded version resource...")
+    print(f"\n[4/4] Compiling {setup_name}.exe Self-Extracting Installer Wizard with embedded version resource...")
     installer_cmd = [
         sys.executable, "-m", "PyInstaller",
         "--add-data", f"{os.path.join(BASE_DIR, 'version.json')};.",
@@ -198,10 +305,17 @@ def build(force_rebuild: bool = False):
         os.path.join(BASE_DIR, "installer", "setup_gui.py")
     ]
     subprocess.check_call(installer_cmd, cwd=BASE_DIR)
+    sign_executable(setup_versioned_exe)
 
-    # Maintain OhrHaKsav_Setup.exe copy for backward-compatibility & generic shortcuts
     shutil.copy2(setup_versioned_exe, setup_exe)
     print(f" -> Created compatibility alias: {setup_exe}")
+
+    # Compute & embed SHA-256 cryptographic checksums into version.json & public/version.json
+    installer_sha = compute_sha256(setup_versioned_exe)
+    patch_sha = compute_sha256(patch_zip)
+    print(f" -> Installer SHA-256: {installer_sha}")
+    print(f" -> Delta Patch SHA-256: {patch_sha}")
+    update_version_checksums(installer_sha, patch_sha)
 
     # Cleanup temporary version info files
     for vi_path in [app_version_info, setup_version_info]:
@@ -211,7 +325,7 @@ def build(force_rebuild: bool = False):
             except Exception:
                 pass
 
-    # 4. Deploy to custom staging directory (configured via local_deploy.txt or KSAV_KOOKER_DEPLOY_DIR)
+    # Deploy to custom staging directory
     target_drive = os.environ.get("OHR_HAKSAV_DEPLOY_DIR") or os.environ.get("KSAV_KOOKER_DEPLOY_DIR")
     if not target_drive:
         deploy_cfg = os.path.join(BASE_DIR, "local_deploy.txt")
@@ -227,22 +341,19 @@ def build(force_rebuild: bool = False):
     if target_drive and os.path.exists(target_drive):
         try:
             print(f"\nDeploying artifacts to destination: {target_drive}...")
-            
-            # 1. Setup wizards (both versioned and generic)
+
             shutil.copy2(setup_versioned_exe, os.path.join(target_drive, f"{setup_name}.exe"))
             shutil.copy2(setup_exe, os.path.join(target_drive, "OhrHaKsav_Setup.exe"))
-            print(f" -> Deployed {setup_name}.exe and OhrHaKsav_Setup.exe")
+            shutil.copy2(patch_zip, os.path.join(target_drive, f"OhrHaKsav_Patch_v{version}.zip"))
+            print(f" -> Deployed {setup_name}.exe, OhrHaKsav_Setup.exe & OhrHaKsav_Patch_v{version}.zip")
 
-            # 2. Portable zip
             portable_zip = os.path.join(target_drive, f"OhrHaKsav-v{version}-Windows.zip")
             shutil.copy2(payload_zip, portable_zip)
             print(f" -> Deployed portable zip to {portable_zip}")
 
-            # 3. version.json for offline update checks
             shutil.copy2(os.path.join(BASE_DIR, "version.json"), os.path.join(target_drive, "version.json"))
-            print(" -> Deployed version.json for offline update checks")
+            print(" -> Deployed version.json (with SHA-256 hashes) for offline update checks")
 
-            # 3. Unpacked directory
             drive_app_dir = os.path.join(target_drive, "Ohr HaKsav")
             if os.path.exists(drive_app_dir):
                 shutil.rmtree(drive_app_dir, ignore_errors=True)
@@ -252,6 +363,7 @@ def build(force_rebuild: bool = False):
             print("\n[ALL DELIVERABLES READY AND DEPLOYED]")
         except Exception as e:
             print(f"Notice: Deployment error: {e}")
+
 
 if __name__ == "__main__":
     force = "--force" in sys.argv
