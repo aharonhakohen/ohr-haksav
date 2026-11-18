@@ -66,9 +66,21 @@ STRINGS = {
         "menu_lang_he": "עברית (Hebrew)",
 
         "menu_help": "Help",
-        "menu_help_guide": "User Guide & Tips (F1)",
+        "menu_help_guide": "User Guide & Tutorial... (F1)",
         "menu_help_about": "About Ohr HaKsav...",
         "menu_help_check_updates": "Check for Updates... (Ctrl+U)",
+        "btn_help_tooltip": "User Guide & Tutorial (F1)",
+
+        # Help & Tutorial Dialog
+        "help_dialog_title": "Ohr HaKsav — User Guide & Interactive Tutorial",
+        "help_tab_quickstart": "🚀 Quick Start",
+        "help_tab_training": "🧠 Training the System",
+        "help_tab_tools": "🛠️ Studio Tools",
+        "help_tab_shortcuts": "⌨️ Shortcuts",
+        "help_tab_offline": "🌐 Offline & Privacy",
+        "help_btn_open_memory": "🧠 Open Memory Studio Now",
+        "help_btn_close": "Close",
+        "help_search_placeholder": "Search guide topics (e.g. training, profiles, shortcuts)...",
 
         # Update Dialog
         "update_dialog_title": "Check for Updates",
@@ -305,9 +317,21 @@ STRINGS = {
         "menu_lang_he": "עברית (ברירת מחדל בעברית)",
 
         "menu_help": "עזרה",
-        "menu_help_guide": "מדריך למשתמש וקיצורים (F1)",
+        "menu_help_guide": "מדריך למשתמש, הדרכה ואימון... (F1)",
         "menu_help_about": "אודות אור הכתב...",
         "menu_help_check_updates": "בדוק עדכונים... (Ctrl+U)",
+        "btn_help_tooltip": "מדריך למשתמש והדרכה (F1)",
+
+        # Help & Tutorial Dialog
+        "help_dialog_title": "אור הכתב — מדריך למשתמש, הדרכה ואימון המערכת",
+        "help_tab_quickstart": "🚀 צעדים ראשונים",
+        "help_tab_training": "🧠 אימון המערכת וזיכרון",
+        "help_tab_tools": "🛠️ כלי הסטודיו",
+        "help_tab_shortcuts": "⌨️ קיצורי מקשים",
+        "help_tab_offline": "🌐 אופליין ואבטחה",
+        "help_btn_open_memory": "🧠 פתח את בנק הזיכרון כעת",
+        "help_btn_close": "סגור",
+        "help_search_placeholder": "חפש בנושאי המדריך (אימון, פרופילים, קיצורים)...",
 
         # Update Dialog
         "update_dialog_title": "בדיקת עדכונים",

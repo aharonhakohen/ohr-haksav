@@ -10,6 +10,7 @@
   "releaseTitle": "v1.3.3 — Pre-Flight Internet Connection Verification & In-App Update Prompt Banner",
   "description": "Ohr HaKsav (אור הכתב) v1.3.3 introduces pre-flight Internet connectivity verification (8ms instant socket test), a silent startup background update check, version-embedded Windows executables (Properties > Details), and a modern in-app notification banner across the top toolbar offering immediate one-click background downloading and automated installation.",
   "features": [
+    "Interactive User Guide & Training Tutorial (F1): Comprehensive in-app guide and tutorial explaining the 3-step workflow, how to train the AI handwriting memory bank from proofreader corrections, managing multi-writer profiles, keyboard shortcuts, and offline features.",
     "Embedded Windows PE File Version Resource: All executables now embed official Windows File Version (1.3.3.0), Product Version, and Company metadata visible in File Explorer Properties > Details.",
     "Version-Labeled Installer Executable: Setup wizard is packaged as OhrHaKsav_Setup_v1.3.3.exe for clear version identification.",
     "Pre-Flight Internet Connection Verification: Non-blocking socket verification on port 53 avoids network timeouts and provides helpful, offline-friendly guidance when running on isolated school/Yeshiva servers.",

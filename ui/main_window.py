@@ -293,6 +293,11 @@ class MainWindow(QMainWindow):
 
         # Help Menu
         self.m_help = mb.addMenu(t("menu_help"))
+        self.act_help_guide = QAction(t("menu_help_guide"), self)
+        self.act_help_guide.setShortcut(QKeySequence("F1"))
+        self.act_help_guide.triggered.connect(self.open_help_dialog)
+        self.m_help.addAction(self.act_help_guide)
+
         self.act_help_updates = QAction(t("menu_help_check_updates"), self)
         self.act_help_updates.setShortcut(QKeySequence("Ctrl+U"))
         self.act_help_updates.triggered.connect(self.open_update_dialog)
@@ -420,7 +425,15 @@ class MainWindow(QMainWindow):
         self.btn_lang.clicked.connect(self.toggle_language)
         bar.addWidget(self.btn_lang)
 
-        # 10. Compact About Button
+        # 10. Interactive User Guide & Tutorial Button
+        self.btn_help = QPushButton("❓")
+        self.btn_help.setFixedSize(26, 26)
+        self.btn_help.setStyleSheet("padding: 0px; font-size: 13px; font-weight: bold;")
+        self.btn_help.setToolTip(t("btn_help_tooltip"))
+        self.btn_help.clicked.connect(self.open_help_dialog)
+        bar.addWidget(self.btn_help)
+
+        # 11. Compact About Button
         self.btn_about = QPushButton("ℹ")
         self.btn_about.setFixedSize(26, 26)
         self.btn_about.setStyleSheet("padding: 0px; font-size: 13px; font-weight: bold;")
@@ -609,12 +622,16 @@ class MainWindow(QMainWindow):
         self.act_lang_he.setText(t("menu_lang_he"))
 
         self.m_help.setTitle(t("menu_help"))
+        if hasattr(self, "act_help_guide"):
+            self.act_help_guide.setText(t("menu_help_guide"))
         if getattr(self, "_remote_update_data", None) and self._remote_update_data.get("version"):
             v = self._remote_update_data.get("version")
             self.act_help_updates.setText(f"{t('menu_help_check_updates')} (v{v} {t('status_update_available')})")
         else:
             self.act_help_updates.setText(t("menu_help_check_updates"))
         self.act_help_about.setText(t("menu_help_about"))
+        if hasattr(self, "btn_help"):
+            self.btn_help.setToolTip(t("btn_help_tooltip"))
 
         if hasattr(self, "update_banner") and self.update_banner.isVisible() and getattr(self, "_remote_update_data", None):
             self.update_banner.show_update(
@@ -1073,6 +1090,11 @@ class MainWindow(QMainWindow):
     def _on_banner_details_clicked(self, data: dict):
         """User clicked 'What's New' on the top banner."""
         self.open_update_dialog(auto_start_install=False)
+
+    def open_help_dialog(self, initial_tab: int = 0):
+        from ui.help_dialog import HelpTutorialDialog
+        dlg = HelpTutorialDialog(self, initial_tab=initial_tab)
+        dlg.exec()
 
     def open_about_dialog(self):
         dlg = AboutDialog(self)

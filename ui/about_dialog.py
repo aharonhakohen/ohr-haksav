@@ -60,7 +60,7 @@ class AboutDialog(QDialog):
         lbl_ver.setStyleSheet("font-size: 13px; font-weight: 600; color: #a6e3a1;")
         title_box.addWidget(lbl_ver)
 
-        lbl_sub = QLabel("סטודיו אופליין לזיהוי כתב יד תורני ומחברות שיעורים\nדער קלוגער כתב-קוקער פאר שיעורים און חידושי תורה")
+        lbl_sub = QLabel("סטודיו אופליין לזיהוי כתב יד תורני ומחברות שיעורים\nמערכת חכמה לזיהוי, עריכה ואימון כתב יד לשיעורים וחידושי תורה")
         lbl_sub.setStyleSheet("font-size: 11px; color: #a6adc8; font-style: italic;")
         title_box.addWidget(lbl_sub)
 
@@ -74,7 +74,7 @@ class AboutDialog(QDialog):
         browser.setHtml("""
         <div style="font-family: sans-serif; line-height: 1.5; color: #cdd6f4;">
             <p><b>What is Ohr HaKsav?</b><br>
-            <b>Ohr HaKsav</b> (אור הכתב — Yiddish for <i>'Handwriting / Script Scanner & Viewer'</i>) is a fully offline, standalone desktop application built specifically for yeshiva students, rebbeim, and talmidei chachamim to digitize handwritten shiur notes and Torah chiddushim.</p>
+            <b>Ohr HaKsav</b> (אור הכתב — <i>'Light of the Script / Torah Notes'</i>) is a fully offline, standalone desktop application built specifically for yeshiva students, rebbeim, and talmidei chachamim to digitize handwritten shiur notes and Torah chiddushim.</p>
             
             <p><b>Key Capabilities:</b></p>
             <ul>
@@ -91,7 +91,21 @@ class AboutDialog(QDialog):
         """)
         layout.addWidget(browser)
 
+        btn_row = QHBoxLayout()
+        btn_guide = QPushButton("📖 User Guide & Tutorial (F1)")
+        btn_guide.setObjectName("btn_secondary")
+        btn_guide.clicked.connect(self._open_guide)
+        btn_row.addWidget(btn_guide)
+
         btn_close = QPushButton("סגור / Close")
         btn_close.setObjectName("btn_primary")
         btn_close.clicked.connect(self.accept)
-        layout.addWidget(btn_close, alignment=Qt.AlignmentFlag.AlignCenter)
+        btn_row.addWidget(btn_close)
+
+        layout.addLayout(btn_row)
+
+    def _open_guide(self):
+        self.accept()
+        parent = self.parent()
+        if parent and hasattr(parent, 'open_help_dialog'):
+            parent.open_help_dialog()
