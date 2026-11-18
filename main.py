@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 Ohr HaKsav (אור הכתב) - Offline Torah Notes & Handwriting OCR Studio
-Main Application Entry Point with 3D Splash Screen and Taskbar Icon.
+Main Application Entry Point with Instant Startup and Windows Taskbar Integration.
 """
 
 import sys
 import os
-import time
 
 # Ensure project root is in sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,10 +22,9 @@ if sys.platform == "win32":
         pass
 
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QFont, QIcon
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt
 
-from ui.splash_screen import ModernSplashScreen
 from ui.main_window import MainWindow
 
 def main():
@@ -46,38 +44,23 @@ def main():
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
-    # Show Splash Screen centered on active display
-    splash = ModernSplashScreen()
-    splash.center_on_screen()
-    splash.show()
-    app.processEvents()
+    # Support optional --splash flag if explicitly requested, otherwise launch instantly
+    if "--splash" in sys.argv:
+        from ui.splash_screen import ModernSplashScreen
+        splash = ModernSplashScreen()
+        splash.center_on_screen()
+        splash.show()
+        app.processEvents()
 
-    # Step 1: Initializing
-    splash.set_progress(25, "Initializing offline Hebrew handwriting OCR engine...")
-    app.processEvents()
-    time.sleep(0.3)
-
-    # Step 2: Database
-    splash.set_progress(60, "Loading mistake memory bank and handwriting profiles...")
-    app.processEvents()
-    time.sleep(0.3)
-
-    # Step 3: UI
-    splash.set_progress(90, "Loading Hebrew proofreading studio and interface...")
-    app.processEvents()
-
-    # Create main window
-    window = MainWindow()
-    window.center_on_screen()
-
-    splash.set_progress(100, "Ready!")
-    app.processEvents()
-    time.sleep(0.3)
-
-    # Transition to main window
-    splash.finish(window)
-    window.center_on_screen()
-    window.show()
+        window = MainWindow()
+        window.center_on_screen()
+        splash.finish(window)
+        window.show()
+    else:
+        # Instant direct launch for maximum responsiveness (~1.1s startup)
+        window = MainWindow()
+        window.center_on_screen()
+        window.show()
 
     sys.exit(app.exec())
 
