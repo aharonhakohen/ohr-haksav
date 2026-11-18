@@ -91,6 +91,34 @@ def parse_version_tuple(v_str: str) -> tuple:
     return tuple(parts[:3])
 
 
+def find_local_installer(folder: str, version: str = "") -> str:
+    """Finds the setup executable in a folder, prioritizing versioned filenames."""
+    if not folder or not os.path.exists(folder):
+        return ""
+    clean_ver = str(version).lstrip("vV").strip()
+    candidates = []
+    if clean_ver:
+        candidates.extend([
+            f"OhrHaKsav_Setup_v{clean_ver}.exe",
+            f"OhrHaKsav_Setup-v{clean_ver}.exe",
+            f"OhrHaKsav_Setup_{clean_ver}.exe",
+            f"OhrHaKsav-v{clean_ver}-Setup.exe",
+            f"OhrHaKsav_v{clean_ver}_Setup.exe"
+        ])
+    candidates.append("OhrHaKsav_Setup.exe")
+    for c in candidates:
+        p = os.path.join(folder, c)
+        if os.path.exists(p):
+            return p
+    try:
+        for fname in os.listdir(folder):
+            if fname.lower().endswith(".exe") and "setup" in fname.lower() and "ohr" in fname.lower():
+                return os.path.join(folder, fname)
+    except Exception:
+        pass
+    return ""
+
+
 class DownloadWorker(QThread):
     progress = pyqtSignal(int, int, int)  # cur_bytes, tot_bytes, percent
     finished = pyqtSignal(str)           # downloaded_dest_path
@@ -197,8 +225,8 @@ class StartupUpdateWorker(QThread):
                     return
                 with open(vpath, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                setup_exe = os.path.join(folder, "OhrHaKsav_Setup.exe")
-                data["_local_setup_path"] = setup_exe if os.path.exists(setup_exe) else ""
+                setup_exe = find_local_installer(folder, data.get("version", ""))
+                data["_local_setup_path"] = setup_exe
                 data["_source_folder"] = folder
             else:
                 # Online check: Verify Internet connectivity first!
@@ -269,8 +297,8 @@ class CheckUpdateWorker(QThread):
                     data = json.load(f)
 
                 # Check if setup exe is also in this folder
-                setup_exe = os.path.join(folder, "OhrHaKsav_Setup.exe")
-                data["_local_setup_path"] = setup_exe if os.path.exists(setup_exe) else ""
+                setup_exe = find_local_installer(folder, data.get("version", ""))
+                data["_local_setup_path"] = setup_exe
                 data["_source_folder"] = folder
 
             else:
@@ -806,16 +834,18 @@ class UpdateDialog(QDialog):
             self._run_local_installer(local_setup)
             return
 
+        remote_ver = str(self.latest_data.get("version", self.current_version)).lstrip("vV")
         if self.source_type == "local" and self.source_local_path:
-            cand = os.path.join(self.source_local_path, "OhrHaKsav_Setup.exe")
-            if os.path.exists(cand):
+            cand = find_local_installer(self.source_local_path, remote_ver)
+            if cand and os.path.exists(cand):
                 self._run_local_installer(cand)
                 return
 
         # 2. Online GitHub download and install
-        remote_ver = str(self.latest_data.get("version", self.current_version)).lstrip("vV")
-        download_url = f"https://github.com/aharonhakohen/ohr-haksav/releases/download/v{remote_ver}/OhrHaKsav_Setup.exe"
-        fallback_url = "https://github.com/aharonhakohen/ohr-haksav/releases/latest/download/OhrHaKsav_Setup.exe"
+        # Check if version.json provided an explicit installer download URL
+        custom_dl_url = self.latest_data.get("installerDownloadUrl", "")
+        download_url = custom_dl_url or f"https://github.com/aharonhakohen/ohr-haksav/releases/download/v{remote_ver}/OhrHaKsav_Setup_v{remote_ver}.exe"
+        fallback_url = f"https://github.com/aharonhakohen/ohr-haksav/releases/download/v{remote_ver}/OhrHaKsav_Setup.exe"
 
         self.btn_install_now.setEnabled(False)
         self.btn_install_now.setText(t("update_btn_downloading", pct=0))
