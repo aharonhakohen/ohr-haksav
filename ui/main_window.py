@@ -29,6 +29,7 @@ from ui.theme import DARK_THEME, LIGHT_THEME
 from ui.i18n import t, I18nManager, SETTINGS_PATH, get_current_language
 from core.ocr_engine import OCREngine
 from core.learning_engine import LearningEngine
+from core.logger import log
 
 def get_resource_path(rel_path: str) -> str:
     """Resolve path to resource file for both PyInstaller and source development."""
@@ -64,7 +65,9 @@ class OCRWorker(QThread):
 
     def run(self):
         try:
+            from PIL import ImageOps
             pil_img = Image.open(self.image_path)
+            pil_img = ImageOps.exif_transpose(pil_img)
             if self.rotation % 360 != 0:
                 pil_img = pil_img.rotate(-self.rotation, expand=True)
 
@@ -110,6 +113,7 @@ class MainWindow(QMainWindow):
         self.is_dark_theme = False  # Default to clean, modern Light Mode
         self._load_theme_setting()
         self.active_worker = None
+        self._batch_scanning = False
         self._remote_update_data = None
         self._startup_update_worker = None
 
@@ -714,13 +718,33 @@ class MainWindow(QMainWindow):
             self.add_images(files)
 
     def add_images(self, file_paths: List[str]):
+        from PIL import ImageOps
         initial_count = len(self.pages)
+        log.info(f"Adding {len(file_paths)} image(s) to notebook session...")
         for path in file_paths:
             fname = os.path.basename(path)
+            init_rot = 0
+            try:
+                with Image.open(path) as im:
+                    im_trans = ImageOps.exif_transpose(im)
+                    w, h = im_trans.size
+                    if w > h * 1.15:
+                        import numpy as np
+                        import cv2
+                        small = im_trans.convert("L").resize((300, 200))
+                        arr_sm = np.array(small)
+                        sob_y = cv2.Sobel(arr_sm, cv2.CV_64F, 0, 1, ksize=3)
+                        sob_x = cv2.Sobel(arr_sm, cv2.CV_64F, 1, 0, ksize=3)
+                        if float(np.mean(np.abs(sob_x))) > float(np.mean(np.abs(sob_y))) * 1.08:
+                            init_rot = 90
+                            log.info(f"Auto-orient on attach: {fname} is sideways ({w}x{h}). Default rotation set to 90° CW.")
+            except Exception:
+                pass
+
             self.pages.append({
                 "path": path,
                 "filename": fname,
-                "rotation": 0,
+                "rotation": init_rot,
                 "raw_text": "",
                 "edited_text": "",
                 "status": t("page_status_ready"),
@@ -782,7 +806,8 @@ class MainWindow(QMainWindow):
 
         # Load image into viewer
         try:
-            pil_img = Image.open(pdata["path"])
+            from PIL import ImageOps
+            pil_img = ImageOps.exif_transpose(Image.open(pdata["path"]))
             self.viewer.load_image(pil_img, rotation=pdata["rotation"])
         except Exception as e:
             self.lbl_status.setText(f"Error loading image: {e}")
@@ -819,7 +844,8 @@ class MainWindow(QMainWindow):
         self.btn_scan.setEnabled(False)
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
-        self.lbl_status.setText(f"Scanning page {self.current_page_idx + 1}...")
+        self.lbl_status.setText(f"Scanning page {self.current_page_idx + 1} ({pdata['filename']})...")
+        log.info(f"Scanning page {self.current_page_idx + 1}/{len(self.pages)}: {pdata['filename']} (rotation={pdata['rotation']})")
 
         self.active_worker = OCRWorker(
             self.ocr_engine, self.learning_engine, pdata["path"], pdata["rotation"]
@@ -855,10 +881,17 @@ class MainWindow(QMainWindow):
                     self.lbl_learned_badge.setText(f"Applied {res['corrections_applied']} automatic learned corrections ✓")
 
             self.lbl_status.setText(f"Page {page_idx + 1} scanned successfully ({len(res['lines'])} lines, applied {res['corrections_applied']} learned rules)!")
+            log.info(f"Page {page_idx + 1} scanned successfully: {len(res['lines'])} lines, {res['corrections_applied']} corrections.")
+
+        # If batch scanning is active, advance to next unscanned page!
+        if getattr(self, "_batch_scanning", False):
+            QTimer.singleShot(200, self._scan_next_batch_page)
 
     def _on_ocr_error(self, err_msg: str):
+        self._batch_scanning = False
         self.progress_bar.setVisible(False)
         self.btn_scan.setEnabled(True)
+        log.error(f"OCR Error: {err_msg}")
         QMessageBox.critical(self, "OCR Error", f"An error occurred during OCR recognition:\n{err_msg}")
         self.lbl_status.setText("Scan failed.")
 
@@ -867,12 +900,34 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Notice", "Please attach images to scan first.")
             return
 
+        unscanned = [i for i, p in enumerate(self.pages) if p["status"] != t("page_status_scanned")]
+        if not unscanned:
+            QMessageBox.information(self, "Complete", "All pages in notebook have already been scanned!")
+            return
+
+        self._batch_scanning = True
+        log.info(f"Initiated 'Scan All Pages' batch mode for {len(unscanned)} unscanned page(s)...")
+        self._scan_next_batch_page()
+
+    def _scan_next_batch_page(self):
+        if not getattr(self, "_batch_scanning", False):
+            return
+
         for i, p in enumerate(self.pages):
             if p["status"] != t("page_status_scanned"):
                 self.list_pages.setCurrentRow(i)
                 self.scan_current_page()
                 return
-        QMessageBox.information(self, "Complete", "All pages in notebook have already been scanned!")
+
+        # Loop completed: all pages have been scanned!
+        self._batch_scanning = False
+        log.info(f"Batch scan completed: all {len(self.pages)} pages scanned successfully.")
+        self.lbl_status.setText(f"Batch scan complete: All {len(self.pages)} pages scanned successfully ✓")
+        QMessageBox.information(
+            self,
+            "Batch Scan Complete",
+            f"All {len(self.pages)} pages in the notebook have been transcribed successfully!"
+        )
 
     def learn_current_corrections(self):
         if self.current_page_idx < 0 or self.current_page_idx >= len(self.pages):
