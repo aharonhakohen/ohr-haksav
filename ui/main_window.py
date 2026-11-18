@@ -24,14 +24,11 @@ from PyQt6.QtGui import QIcon, QPixmap, QImage, QAction, QKeySequence
 
 from ui.image_viewer import DocumentViewer
 from ui.text_editor import HebrewTextEditor
-from ui.dictionary_dialog import DictionaryManagerDialog
-from ui.about_dialog import AboutDialog
 from ui.update_banner import UpdateBanner
 from ui.theme import DARK_THEME, LIGHT_THEME
 from ui.i18n import t, I18nManager, SETTINGS_PATH, get_current_language
 from core.ocr_engine import OCREngine
 from core.learning_engine import LearningEngine
-from core.docx_exporter import export_notes_to_docx
 
 def get_resource_path(rel_path: str) -> str:
     """Resolve path to resource file for both PyInstaller and source development."""
@@ -326,7 +323,7 @@ class MainWindow(QMainWindow):
         logo_path = get_resource_path(os.path.join("assets", "ohr_haksav.png"))
         if os.path.exists(logo_path):
             self.lbl_logo = QLabel()
-            pix = QPixmap(logo_path).scaled(26, 26, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            pix = QIcon(logo_path).pixmap(26, 26)
             self.lbl_logo.setPixmap(pix)
             self.lbl_logo.setFixedSize(26, 26)
             brand_box.addWidget(self.lbl_logo)
@@ -1005,6 +1002,7 @@ class MainWindow(QMainWindow):
 
         try:
             author_formatted = f"הערות וחידושים מאת {author}" if author else ""
+            from core.docx_exporter import export_notes_to_docx
             export_notes_to_docx(
                 pages_to_export,
                 out_path,
@@ -1052,6 +1050,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Export Error", f"Error saving text document:\n{str(e)}")
 
     def open_dictionary_manager(self):
+        from ui.dictionary_dialog import DictionaryManagerDialog
         dlg = DictionaryManagerDialog(self.learning_engine, self)
         dlg.exec()
         self._refresh_profiles_ui()
@@ -1097,6 +1096,7 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def open_about_dialog(self):
+        from ui.about_dialog import AboutDialog
         dlg = AboutDialog(self)
         dlg.exec()
 
