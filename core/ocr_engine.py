@@ -121,6 +121,32 @@ class OCREngine:
             pass  # Fallback to uncropped image on any error
         return img
 
+    def auto_orient_if_sideways(self, img: Image.Image) -> Image.Image:
+        """
+        Detects if a notebook page was photographed sideways (landscape mode where ruled lines run vertically)
+        and automatically rotates it 90 degrees clockwise so Hebrew handwriting lines run horizontally.
+        """
+        try:
+            w, h = img.size
+            if w > h * 1.15:
+                import cv2
+                small = img.convert("L").resize((400, 300))
+                arr_sm = np.array(small)
+                sob_y = cv2.Sobel(arr_sm, cv2.CV_64F, 0, 1, ksize=3)
+                sob_x = cv2.Sobel(arr_sm, cv2.CV_64F, 1, 0, ksize=3)
+                y_str = float(np.mean(np.abs(sob_y)))
+                x_str = float(np.mean(np.abs(sob_x)))
+                if x_str > y_str * 1.08:
+                    try:
+                        from core.logger import log
+                        log.info(f"Auto-orient: Detected sideways notebook page ({w}x{h}, vert_energy={x_str:.1f} > horiz_energy={y_str:.1f}). Rotating 90° CW.")
+                    except Exception:
+                        pass
+                    return img.rotate(270, expand=True)
+        except Exception:
+            pass
+        return img
+
     def preprocess_image(self, img: Image.Image, enhance_contrast: bool = True, auto_crop_desk: bool = True) -> Image.Image:
         """Cleans and standardizes image for optimal Hebrew handwriting recognition."""
         # Convert to RGB
@@ -129,6 +155,9 @@ class OCREngine:
 
         # Automatically handle EXIF orientation
         img = ImageOps.exif_transpose(img)
+
+        # Automatically orient sideways notebook pages
+        img = self.auto_orient_if_sideways(img)
 
         # Automatically crop dark table/desk margins if document is resting on a desk
         if auto_crop_desk:

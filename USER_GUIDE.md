@@ -194,5 +194,5 @@ For network administrators in Yeshivas, computer centers, and school domains:
 1. **Instant Pre-Flight Socket Check (8ms):** The updater tests socket connectivity on port 53 before issuing network calls. On air-gapped or domain machines without internet, it immediately falls back to offline mode with zero timeout delays.
 2. **UNC Server Share Updates:**
    * In **Update Source & Settings**, set the update source to a local UNC network share (e.g. `\\newltcserver\Installs\OhrHaKsav`).
-   * When an administrator drops `version.json` and `OhrHaKsav_Setup_v1.3.4.exe` onto the network share, all network workstations will automatically detect and install the update locally without internet access.
+   * When an administrator drops `version.json` and `OhrHaKsav_Setup_v1.3.5.exe` onto the network share, all network workstations will automatically detect and install the update locally without internet access.
 3. **Silent Background Update Polling:** The app quietly checks for updates on launch without interrupting teachers or students, gently displaying an in-app banner across the top toolbar when a release is ready.

@@ -335,6 +335,16 @@ class InstallWorker(QThread):
 
             if self.create_startmenu:
                 for sm_dir in get_windows_start_menu_dirs():
+                    # 1. Top-level shortcut directly in Programs for Windows 11 'All apps' list & Search
+                    top_lnk = os.path.join(sm_dir, "Ohr HaKsav.lnk")
+                    create_windows_shortcut(
+                        top_lnk,
+                        exe_path,
+                        ico_path,
+                        "Ohr HaKsav - Offline Torah Notes OCR Studio"
+                    )
+
+                    # 2. Subfolder shortcut for traditional folder navigation
                     app_sm = os.path.join(sm_dir, "Ohr HaKsav")
                     os.makedirs(app_sm, exist_ok=True)
                     lnk = os.path.join(app_sm, "Ohr HaKsav.lnk")
@@ -381,6 +391,10 @@ class InstallWorker(QThread):
         try:
             uninstaller_bat = os.path.join(target_dir, "uninstall.bat")
             desktop_lnk = os.path.join(os.path.expanduser("~"), "Desktop", "Ohr HaKsav.lnk")
+            start_menu_top_lnk = os.path.join(
+                os.environ.get("APPDATA", ""), 
+                r"Microsoft\Windows\Start Menu\Programs\Ohr HaKsav.lnk"
+            )
             start_menu_dir = os.path.join(
                 os.environ.get("APPDATA", ""), 
                 r"Microsoft\Windows\Start Menu\Programs\Ohr HaKsav"
@@ -395,6 +409,7 @@ echo ===================================================
 
 echo [1/3] Removing desktop and start menu shortcuts...
 if exist "{desktop_lnk}" del /f /q "{desktop_lnk}"
+if exist "{start_menu_top_lnk}" del /f /q "{start_menu_top_lnk}"
 if exist "{start_menu_dir}" rmdir /s /q "{start_menu_dir}"
 
 echo [2/3] Removing Windows registry entry...

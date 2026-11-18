@@ -48,7 +48,8 @@ class DocumentViewer(QGraphicsView):
 
     def load_image(self, pil_image: Image.Image, rotation: int = 0):
         """Loads a PIL image into the graphics scene."""
-        self.current_pil_img = pil_image
+        from PIL import ImageOps
+        self.current_pil_img = ImageOps.exif_transpose(pil_image)
         self.rotation_angle = rotation
         self.contrast_enhanced = False
         self.bounding_boxes = []

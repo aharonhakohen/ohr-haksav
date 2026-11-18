@@ -104,6 +104,8 @@ def build(force_rebuild: bool = False):
         os.path.join(BASE_DIR, "installer", "setup_gui.py"),
         os.path.join(BASE_DIR, "ui", "i18n.py"),
         os.path.join(BASE_DIR, "core", "learning_engine.py"),
+        os.path.join(BASE_DIR, "core", "ocr_engine.py"),
+        os.path.join(BASE_DIR, "core", "logger.py"),
         ico_path
     ]
     needs_app_rebuild = force_rebuild or not os.path.exists(app_exe)
