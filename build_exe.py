@@ -99,6 +99,7 @@ def build(force_rebuild: bool = False):
         os.path.join(BASE_DIR, "ui", "text_editor.py"),
         os.path.join(BASE_DIR, "ui", "update_dialog.py"),
         os.path.join(BASE_DIR, "ui", "update_banner.py"),
+        os.path.join(BASE_DIR, "ui", "help_dialog.py"),
         os.path.join(BASE_DIR, "ui", "theme.py"),
         os.path.join(BASE_DIR, "installer", "setup_gui.py"),
         os.path.join(BASE_DIR, "ui", "i18n.py"),
