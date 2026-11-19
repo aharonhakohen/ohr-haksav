@@ -423,6 +423,10 @@ class MainWindow(QMainWindow):
         self.act_help_updates.triggered.connect(self.open_update_dialog)
         self.m_help.addAction(self.act_help_updates)
 
+        self.act_help_repair_start_menu = QAction(t("menu_help_repair_start_menu"), self)
+        self.act_help_repair_start_menu.triggered.connect(self.repair_start_menu_shortcut)
+        self.m_help.addAction(self.act_help_repair_start_menu)
+
         self.m_help.addSeparator()
 
         self.act_help_about = QAction(t("menu_help_about"), self)
@@ -781,6 +785,8 @@ class MainWindow(QMainWindow):
             self.act_help_updates.setText(f"{t('menu_help_check_updates')} (v{v} {t('status_update_available')})")
         else:
             self.act_help_updates.setText(t("menu_help_check_updates"))
+        if hasattr(self, "act_help_repair_start_menu"):
+            self.act_help_repair_start_menu.setText(t("menu_help_repair_start_menu"))
         self.act_help_about.setText(t("menu_help_about"))
         if hasattr(self, "btn_help"):
             self.btn_help.setToolTip(t("btn_help_tooltip"))
@@ -2188,3 +2194,99 @@ class MainWindow(QMainWindow):
 
         log.info("Ohr HaKsav shutdown complete. Exiting.")
         event.accept()
+
+    def repair_start_menu_shortcut(self):
+        """
+        Adds Ohr HaKsav.lnk directly into the local All-Users Start Menu (C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs)
+        and registers HKCU App Paths so Windows 11 Start Menu & Search always display Ohr HaKsav—even on domain
+        workstations with Folder Redirection (where Windows 11 ignores UNC-redirected Start Menu shortcuts).
+        """
+        if sys.platform != "win32":
+            return
+
+        if getattr(sys, "frozen", False):
+            exe_path = sys.executable
+            ico_path = os.path.join(os.path.dirname(exe_path), "_internal", "assets", "ohr_haksav.ico")
+            if not os.path.exists(ico_path):
+                ico_path = exe_path
+        else:
+            installed_exe = os.path.join(
+                os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+                "Programs", "Ohr HaKsav", "OhrHaKsav.exe"
+            )
+            exe_path = installed_exe if os.path.exists(installed_exe) else sys.executable
+            ico_path = exe_path
+
+        common_sm = os.path.join(
+            os.environ.get("PROGRAMDATA", r"C:\ProgramData"),
+            r"Microsoft\Windows\Start Menu\Programs"
+        )
+        lnk_path = os.path.join(common_sm, "Ohr HaKsav.lnk")
+
+        # Register HKCU App Paths (no admin required)
+        try:
+            import winreg
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\App Paths\OhrHaKsav.exe") as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, exe_path)
+                winreg.SetValueEx(key, "Path", 0, winreg.REG_SZ, os.path.dirname(exe_path))
+        except Exception:
+            pass
+
+        reply = QMessageBox.question(
+            self,
+            "Add / Repair Windows Start Menu Shortcut",
+            "On Windows 11 domain PCs with Folder Redirection, Windows ignores Start Menu shortcuts stored on network shares.\n\n"
+            f"Ohr HaKsav can place a local shortcut in:\n{lnk_path}\n\n"
+            "Windows will show a quick Administrator (UAC) confirmation so Start Menu & Search can index Ohr HaKsav immediately.\n\n"
+            "Proceed now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        import tempfile, ctypes, time
+        lnk_esc = lnk_path.replace("'", "''")
+        target_esc = exe_path.replace("'", "''")
+        dir_esc = os.path.dirname(exe_path).replace("'", "''")
+        ico_esc = ico_path.replace("'", "''")
+        ps_script = os.path.join(tempfile.gettempdir(), "ohr_haksav_repair_startmenu.ps1")
+        with open(ps_script, "w", encoding="utf-8") as f:
+            f.write(
+                "$ws = New-Object -ComObject WScript.Shell\n"
+                f"$s = $ws.CreateShortcut('{lnk_esc}')\n"
+                f"$s.TargetPath = '{target_esc}'\n"
+                f"$s.WorkingDirectory = '{dir_esc}'\n"
+                f"$s.IconLocation = '{ico_esc}'\n"
+                "$s.Description = 'Ohr HaKsav - Offline Torah Notes OCR Studio'\n"
+                "$s.Save()\n"
+                f"Remove-Item -Path '{ps_script}' -Force -ErrorAction SilentlyContinue\n"
+            )
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            "powershell.exe",
+            f'-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{ps_script}"',
+            None,
+            0
+        )
+        if ret > 32:
+            for _ in range(25):
+                if os.path.exists(lnk_path):
+                    break
+                time.sleep(0.2)
+
+        if os.path.exists(lnk_path):
+            QMessageBox.information(
+                self,
+                "Start Menu Shortcut Added ✓",
+                "Ohr HaKsav has been added to your local Windows 11 Start Menu!\n\n"
+                "Open Start Menu → All Apps → O → Ohr HaKsav (or type 'Ohr HaKsav' in Start Search)."
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Shortcut Not Created",
+                "The Start Menu shortcut could not be created (the Administrator prompt may have been cancelled).\n\n"
+                "You can retry anytime under Help → Add / Repair Windows Start Menu Shortcut."
+            )

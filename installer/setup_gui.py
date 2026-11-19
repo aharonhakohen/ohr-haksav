@@ -68,7 +68,7 @@ def get_windows_desktop_dirs() -> list:
     r"""
     Get all active desktop directory paths for the current user.
     Robust against Windows Server domain environments, Roaming Profiles,
-    Folder Redirection (e.g. \\newltcserver\userdata$\<user>\Desktop), and OneDrive.
+    Folder Redirection (e.g. \\fileserver\userdata$\<user>\Desktop), and OneDrive.
     """
     candidates = []
     
@@ -233,6 +233,74 @@ oLink.Save
 
     return False
 
+
+def create_common_start_menu_shortcut(target_exe: str, icon_path: str, description: str, allow_uac: bool = True) -> bool:
+    """
+    Creates Ohr HaKsav.lnk in the local All-Users Start Menu (C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs).
+    On Windows 11 domain PCs with Folder Redirection (UNC Start Menu \\\\server\\...), Windows 11's Start Menu
+    ignores shortcuts stored on UNC shares and ONLY indexes local ProgramData Start Menu shortcuts.
+    If not running elevated, optionally triggers a single clean UAC elevation prompt via ShellExecuteW('runas').
+    """
+    import tempfile
+    common_sm = os.path.join(
+        os.environ.get("PROGRAMDATA", r"C:\ProgramData"),
+        r"Microsoft\Windows\Start Menu\Programs"
+    )
+    lnk_path = os.path.join(common_sm, "Ohr HaKsav.lnk")
+    if create_windows_shortcut(lnk_path, target_exe, icon_path, description):
+        return True
+
+    if not allow_uac:
+        return False
+
+    try:
+        import ctypes
+        lnk_esc = lnk_path.replace("'", "''")
+        target_esc = target_exe.replace("'", "''")
+        dir_esc = os.path.dirname(target_exe).replace("'", "''")
+        ico_esc = icon_path.replace("'", "''")
+        desc_esc = description.replace("'", "''")
+        ps_script = os.path.join(tempfile.gettempdir(), "ohr_haksav_startmenu_shortcut.ps1")
+        with open(ps_script, "w", encoding="utf-8") as f:
+            f.write(
+                "$ws = New-Object -ComObject WScript.Shell\n"
+                f"$s = $ws.CreateShortcut('{lnk_esc}')\n"
+                f"$s.TargetPath = '{target_esc}'\n"
+                f"$s.WorkingDirectory = '{dir_esc}'\n"
+                f"$s.IconLocation = '{ico_esc}'\n"
+                f"$s.Description = '{desc_esc}'\n"
+                "$s.Save()\n"
+                f"Remove-Item -Path '{ps_script}' -Force -ErrorAction SilentlyContinue\n"
+            )
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            "powershell.exe",
+            f'-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{ps_script}"',
+            None,
+            0
+        )
+        if ret > 32:
+            for _ in range(25):
+                if os.path.exists(lnk_path):
+                    return True
+                time.sleep(0.2)
+    except Exception:
+        pass
+    return os.path.exists(lnk_path)
+
+
+def register_app_paths(exe_path: str):
+    """Registers HKCU App Paths so Windows Run (Win+R -> OhrHaKsav) and shell lookup always resolve."""
+    try:
+        import winreg
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\App Paths\OhrHaKsav.exe"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, exe_path)
+            winreg.SetValueEx(key, "Path", 0, winreg.REG_SZ, os.path.dirname(exe_path))
+    except Exception:
+        pass
+
 class InstallWorker(QThread):
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
@@ -334,8 +402,10 @@ class InstallWorker(QThread):
                     )
 
             if self.create_startmenu:
-                for sm_dir in get_windows_start_menu_dirs():
-                    # 1. Top-level shortcut directly in Programs for Windows 11 'All apps' list & Search
+                sm_dirs = get_windows_start_menu_dirs()
+                has_unc_redirect = any(d.startswith("\\\\") for d in sm_dirs)
+                for sm_dir in sm_dirs:
+                    # Single clean top-level shortcut directly in Programs for Windows 11 'All apps' & Search
                     top_lnk = os.path.join(sm_dir, "Ohr HaKsav.lnk")
                     create_windows_shortcut(
                         top_lnk,
@@ -343,19 +413,23 @@ class InstallWorker(QThread):
                         ico_path,
                         "Ohr HaKsav - Offline Torah Notes OCR Studio"
                     )
+                    # Clean up redundant legacy subfolder duplicate (Windows 11 deduplicates/hides colliding folder+lnk)
+                    legacy_sub = os.path.join(sm_dir, "Ohr HaKsav")
+                    if os.path.isdir(legacy_sub):
+                        shutil.rmtree(legacy_sub, ignore_errors=True)
 
-                    # 2. Subfolder shortcut for traditional folder navigation
-                    app_sm = os.path.join(sm_dir, "Ohr HaKsav")
-                    os.makedirs(app_sm, exist_ok=True)
-                    lnk = os.path.join(app_sm, "Ohr HaKsav.lnk")
-                    create_windows_shortcut(
-                        lnk,
-                        exe_path,
-                        ico_path,
-                        "Ohr HaKsav - Offline Torah Notes OCR Studio"
-                    )
+                # Always ensure a local ProgramData Start Menu shortcut exists when elevated,
+                # or prompt once via UAC on Windows 11 PCs with UNC-redirected Start Menus
+                # (since Windows 11 does not index .lnk shortcuts stored on UNC network shares).
+                create_common_start_menu_shortcut(
+                    exe_path,
+                    ico_path,
+                    "Ohr HaKsav - Offline Torah Notes OCR Studio",
+                    allow_uac=has_unc_redirect
+                )
 
-            # Register in Windows Add/Remove Programs (HKCU Uninstall)
+            # Register HKCU App Paths and Windows Add/Remove Programs (HKCU Uninstall)
+            register_app_paths(exe_path)
             self._register_uninstall(self.target_dir, exe_path, ico_path)
 
             self.progress.emit(100, "Installation completed successfully!")
@@ -411,10 +485,12 @@ echo [1/3] Removing desktop and start menu shortcuts...
 if exist "{desktop_lnk}" del /f /q "{desktop_lnk}"
 if exist "{start_menu_top_lnk}" del /f /q "{start_menu_top_lnk}"
 if exist "{start_menu_dir}" rmdir /s /q "{start_menu_dir}"
+if exist "%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Ohr HaKsav.lnk" del /f /q "%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Ohr HaKsav.lnk" >nul 2>&1
 
 echo [2/3] Removing Windows registry entry...
 reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OhrHaKsav" /f >nul 2>&1
 reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\KsavKooker" /f >nul 2>&1
+reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\OhrHaKsav.exe" /f >nul 2>&1
 
 echo [3/3] Removing application files...
 cd /d "%TEMP%"

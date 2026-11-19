@@ -221,4 +221,4 @@ if __name__ == "__main__":
     test_sha256_and_strict_offline()
     test_single_pass_and_cursive_fixes()
     test_looseleaf_cleaner_and_inverse_box_map()
-    print("All v1.4.2 unit tests in test_suite.py passed successfully!")
+    print("All v1.4.3 unit tests in test_suite.py passed successfully!")

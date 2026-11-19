@@ -6,7 +6,7 @@
 **Light Mode Default UX, Domain Roaming Desktop/Start Menu Shortcuts, and Reliable Process Launching**
 
 ### Summary in Plain English:
-Version `v1.2.1` addresses workstation installation issues in Windows Server domain environments (such as Torah U'Mesorah) and switches the default application theme to **Light Mode**. When installing on domain workstations with Folder Redirection or Roaming Profiles, the user's Desktop and Start Menu are often hosted on a network share (e.g. `\\newltcserver\userdata$\<user>\Desktop`). Previous versions attempted to write shortcuts to the local `C:\Users\<user>\Desktop` path, which is hidden by Windows Explorer. Version `v1.2.1` queries the Windows Shell APIs and Registry to resolve redirected network folders, OneDrive, and local paths, installing shortcuts in all active locations using native Windows Script Host (avoiding domain PowerShell restrictions). Furthermore, the installer now launches Ksav Kooker as an independent, detached process with the correct application working directory upon clicking **Finish**.
+Version `v1.2.1` addresses workstation installation issues in Windows Server domain environments (such as Torah U'Mesorah) and switches the default application theme to **Light Mode**. When installing on domain workstations with Folder Redirection or Roaming Profiles, the user's Desktop and Start Menu are often hosted on a network share (e.g. `\\fileserver\userdata$\<user>\Desktop`). Previous versions attempted to write shortcuts to the local `C:\Users\<user>\Desktop` path, which is hidden by Windows Explorer. Version `v1.2.1` queries the Windows Shell APIs and Registry to resolve redirected network folders, OneDrive, and local paths, installing shortcuts in all active locations using native Windows Script Host (avoiding domain PowerShell restrictions). Furthermore, the installer now launches Ksav Kooker as an independent, detached process with the correct application working directory upon clicking **Finish**.
 
 ### What Changed & What Is Included:
 1. **Light Mode Default Interface (`ui/main_window.py`)**:
@@ -15,7 +15,7 @@ Version `v1.2.1` addresses workstation installation issues in Windows Server dom
    - User theme preferences are automatically saved in `%APPDATA%\KsavKooker\ui_settings.json` and preserved across sessions.
 2. **Windows Server Domain & Folder Redirection Support (`installer/setup_gui.py`)**:
    - Implemented `get_windows_desktop_dirs()` and `get_windows_start_menu_dirs()` querying `SHGetFolderPathW` (`CSIDL_DESKTOPDIRECTORY`, `CSIDL_PROGRAMS`) and Windows Explorer User Shell Folders.
-   - Accurately detects and installs shortcuts to redirected domain server shares (e.g. `\\newltcserver\userdata$\...\Desktop`), OneDrive, and local directories simultaneously.
+   - Accurately detects and installs shortcuts to redirected domain server shares (e.g. `\\fileserver\userdata$\...\Desktop`), OneDrive, and local directories simultaneously.
 3. **Zero-Dependency Native Shortcut Creation**:
    - Replaced PowerShell with native Windows Script Host (`cscript //nologo`), ensuring shortcuts are created reliably even on domain workstations with restricted PowerShell execution policies or AppLocker rules.
 4. **Reliable Post-Install App Launching**:
@@ -30,14 +30,14 @@ Version `v1.2.1` addresses workstation installation issues in Windows Server dom
 **In-App Update Checker (GitHub Cloud & Local Network Share Channels) with Clean Upgrade Process**
 
 ### Summary in Plain English:
-Version `v1.2.0` introduces a dedicated **"Check for Updates..."** tool inside the **Help** menu (<kbd>Ctrl+U</kbd>), paired with an intelligent upgrade engine that resolves file-locking conflicts and purges obsolete application binaries. Users and network administrators can configure where Ksav Kooker looks for updates: either from the official **GitHub Cloud** (for internet-connected systems) or from a **Local Network Share / Windows Server Domain Share / USB Drive** (such as `\\newltcserver\Installs\KsavKooker` or a mapped drive) for offline institutional environments. When upgrading via the setup executable, the installer automatically detects any active instance of Ksav Kooker and closes it, removes old binary files from the program directory, and ensures that personal handwriting profiles, mistake memories, custom dictionaries, and backups in `%APPDATA%` are completely preserved and untouched.
+Version `v1.2.0` introduces a dedicated **"Check for Updates..."** tool inside the **Help** menu (<kbd>Ctrl+U</kbd>), paired with an intelligent upgrade engine that resolves file-locking conflicts and purges obsolete application binaries. Users and network administrators can configure where Ksav Kooker looks for updates: either from the official **GitHub Cloud** (for internet-connected systems) or from a **Local Network Share / Windows Server Domain Share / USB Drive** (such as `\\fileserver\Installs\KsavKooker` or a mapped drive) for offline institutional environments. When upgrading via the setup executable, the installer automatically detects any active instance of Ksav Kooker and closes it, removes old binary files from the program directory, and ensures that personal handwriting profiles, mistake memories, custom dictionaries, and backups in `%APPDATA%` are completely preserved and untouched.
 
 ### What Changed & What Is Included:
 1. **In-App Update Checker (`ui/update_dialog.py`)**:
    - Added **Help > Check for Updates...** (<kbd>Ctrl+U</kbd>) to the main menu bar.
    - Dual-channel update architecture:
      - **Official GitHub Cloud**: Fetches `version.json` over HTTPS and displays release notes and download links.
-     - **Local Network Share / USB / Server Folder**: Scans a UNC path (e.g. `\\newltcserver\Installs\KsavKooker`) or local drive containing `version.json` and `KsavKooker_Setup.exe`.
+     - **Local Network Share / USB / Server Folder**: Scans a UNC path (e.g. `\\fileserver\Installs\KsavKooker`) or local drive containing `version.json` and `KsavKooker_Setup.exe`.
    - Rich update card displaying the new version number, release date, plain-English summary, and bulleted features list.
    - One-click action buttons: Launch local installer directly or open the web release page.
    - User configuration saved to `%APPDATA%\KsavKooker\ui_settings.json`.
@@ -47,7 +47,7 @@ Version `v1.2.0` introduces a dedicated **"Check for Updates..."** tool inside t
    - **Guaranteed User Data Isolation**: Explicitly isolates application program files from user data; all personal handwriting profiles, mistake memory rules, and backups stored in `%APPDATA%\KsavKooker` remain 100% untouched.
    - **Upgrade Mode Indicator**: The setup wizard displays a clear green confirmation banner when an existing installation is detected, assuring the user that their data is safe.
 3. **Automated Deployment with `version.json` (`build_exe.py`)**:
-   - Deploy script now copies `version.json` alongside `OhrHaKsav_Setup.exe` into destination staging folders (e.g. `\\newltcserver\Installs\OhrHaKsav` or local USB media), enabling instant offline update checking across network workstations.
+   - Deploy script now copies `version.json` alongside `OhrHaKsav_Setup.exe` into destination staging folders (e.g. `\\fileserver\Installs\OhrHaKsav` or local USB media), enabling instant offline update checking across network workstations.
 
 ---
 
