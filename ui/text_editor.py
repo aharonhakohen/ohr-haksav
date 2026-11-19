@@ -409,16 +409,28 @@ class HebrewTextEditor(QWidget):
             self.replace_all_pages_requested.emit(query, repl)
 
     # --- Low-Confidence Highlighting ---
-    def set_line_confidences(self, confidences: list, threshold: float = 0.75):
+    def set_line_confidences(self, confidences: list, threshold: float = None):
         """
-        Highlights lines whose OCR confidence falls below `threshold` in soft amber
-        so proofreaders can spot uncertain lines at a glance and jump via F8.
+        Highlights lines whose OCR confidence falls below an adaptive calibrated cutoff
+        (tuned for Mishkefet CTC confidences which typically range 0.85-0.99) so proofreaders
+        can spot the trickiest lines at a glance and jump via F8.
         """
         self.line_confidences = list(confidences or [])
-        self._low_conf_lines = [
-            idx for idx, c in enumerate(self.line_confidences)
-            if isinstance(c, (int, float)) and c < threshold
-        ]
+        valid = [c for c in self.line_confidences if isinstance(c, (int, float))]
+        if not valid:
+            self._low_conf_lines = []
+        else:
+            if threshold is None:
+                med = sorted(valid)[len(valid) // 2]
+                # Adaptive cutoff: flag genuinely lower-confidence lines relative to page median,
+                # clamped to [0.80, 0.945] so high-accuracy pages flag only their weakest lines
+                cutoff = min(0.945, max(0.80, med - 0.02))
+            else:
+                cutoff = threshold
+            self._low_conf_lines = [
+                idx for idx, c in enumerate(self.line_confidences)
+                if isinstance(c, (int, float)) and c < cutoff
+            ]
         self._low_conf_cursor_idx = -1
         self._apply_confidence_highlights()
         self._update_uncertain_badge()

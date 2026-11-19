@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-TorahNotesOCR - Offline Hebrew OCR Engine (v1.4.0)
+TorahNotesOCR - Offline Hebrew OCR Engine (v1.4.1)
 Wraps the Mishkefet-v1 CTC neural recognizer for Hebrew handwriting,
 providing:
 - 4-point perspective dewarping ("CamScanner" flatten) & dark-desk cropping
-- Shadow lighting normalization & pale blue ruled-line suppression
+  with pixel-exact inverse coordinate mapping back to displayed viewer pixels
+- Automatic Looseleaf Paper Cleaner:
+    * 1.2% edge inset eliminating dark desk slivers along paper borders
+    * Automatic circular black binder-hole detection & white-paper fill
+    * Automatic vertical red margin-line detection & ink-preserving removal
+    * Automatic pale-blue horizontal ruled-line detection & suppression
+- Shadow lighting normalization (optional full LAB background flattening)
 - Sideways landscape auto-orientation & 180° upside-down verification
 - Open two-page notebook spread detection & RTL splitting (Right Page -> Left Page)
 - Region-of-Interest (ROI) partial/margin-note recognition
@@ -32,6 +38,63 @@ def _order_quad_points(pts: np.ndarray) -> np.ndarray:
     return rect
 
 
+def _map_box_to_original(box: Optional[dict], coord_info: Optional[dict], orig_w: int, orig_h: int) -> Optional[dict]:
+    """
+    Maps a bounding box dict {'x','y','w','h'} from cropped/perspective-warped OCR space
+    back into exact original displayed-image coordinates so DocumentViewer highlights align pixel-for-pixel.
+    """
+    if not box or not isinstance(box, dict) or not coord_info:
+        return box
+    try:
+        x = float(box.get("x", 0))
+        y = float(box.get("y", 0))
+        bw = float(box.get("w", 0))
+        bh = float(box.get("h", 0))
+
+        # Undo any inner safety border inset first
+        inset_x = float(coord_info.get("inset_x", 0.0))
+        inset_y = float(coord_info.get("inset_y", 0.0))
+        x += inset_x
+        y += inset_y
+
+        mode = coord_info.get("mode", "identity")
+        if mode == "perspective" and coord_info.get("M_inv") is not None:
+            M_inv = coord_info["M_inv"]
+            corners = np.array([
+                [[x, y]],
+                [[x + bw, y]],
+                [[x + bw, y + bh]],
+                [[x, y + bh]]
+            ], dtype="float32")
+            mapped = cv2.perspectiveTransform(corners, M_inv).reshape(4, 2)
+            min_x = max(0.0, float(np.min(mapped[:, 0])))
+            min_y = max(0.0, float(np.min(mapped[:, 1])))
+            max_x = min(float(orig_w), float(np.max(mapped[:, 0])))
+            max_y = min(float(orig_h), float(np.max(mapped[:, 1])))
+            return {
+                "x": int(round(min_x)),
+                "y": int(round(min_y)),
+                "w": max(1, int(round(max_x - min_x))),
+                "h": max(1, int(round(max_y - min_y)))
+            }
+        elif mode == "crop":
+            ox = float(coord_info.get("offset_x", 0.0))
+            oy = float(coord_info.get("offset_y", 0.0))
+            nx = max(0.0, x + ox)
+            ny = max(0.0, y + oy)
+            nw = min(float(orig_w) - nx, bw)
+            nh = min(float(orig_h) - ny, bh)
+            return {
+                "x": int(round(nx)),
+                "y": int(round(ny)),
+                "w": max(1, int(round(nw))),
+                "h": max(1, int(round(nh)))
+            }
+    except Exception:
+        pass
+    return box
+
+
 class OCREngine:
     def __init__(self, model_dir: Optional[str] = None):
         self.model_dir = model_dir or self._resolve_model_dir()
@@ -40,6 +103,7 @@ class OCREngine:
         self._is_loaded = False
         self.high_accuracy_mode = False
         self.clean_shadows_lines = False
+        self.clean_looseleaf = True  # Auto-remove binder holes, red margin line & pale blue ruled lines
         self.check_upside_down = True
 
     def _resolve_model_dir(self) -> str:
@@ -89,12 +153,14 @@ class OCREngine:
     def is_ready(self) -> bool:
         return self._is_loaded and self._recognizer is not None
 
-    def crop_document_if_desk(self, img: Image.Image) -> Image.Image:
+    def crop_document_if_desk_with_map(self, img: Image.Image) -> Tuple[Image.Image, dict]:
         """
         Detects if an image is a page photographed on a darker table/desk background.
-        First attempts a 4-point perspective dewarp ("CamScanner" flatten) when the
-        paper forms a tilted quadrilateral; falls back to an axis-aligned crop.
+        Applies 4-point perspective dewarp ("CamScanner" flatten) when tilted, or clean crop.
+        Trims a ~1.2% safety inset inside the paper edge so dark desk slivers never create phantom edge letters.
+        Returns (cropped_img, coord_info) for exact inverse bounding-box mapping.
         """
+        coord_info = {"mode": "identity", "inset_x": 0, "inset_y": 0}
         try:
             arr = np.array(img.convert("RGB"))
             gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
@@ -131,7 +197,6 @@ class OCREngine:
                     largest = max(contours, key=cv2.contourArea)
                     c_area = cv2.contourArea(largest)
                     if c_area > 0.22 * small_area:
-                        # Attempt 4-point perspective flatten if angled trapezoid
                         peri = cv2.arcLength(largest, True)
                         approx = cv2.approxPolyDP(largest, 0.025 * peri, True)
                         if len(approx) == 4 and cv2.isContourConvex(approx):
@@ -148,7 +213,6 @@ class OCREngine:
                             height_b = np.linalg.norm(tl - bl)
                             max_h = int(max(height_a, height_b))
 
-                            # Only perspective-warp if document is substantial and has noticeable perspective tilt
                             top_tilt = abs(tr[1] - tl[1]) / max(1.0, max_w)
                             side_tilt = abs(br[0] - tr[0]) / max(1.0, max_h)
                             if max_w > 0.35 * w and max_h > 0.35 * h and (top_tilt > 0.02 or side_tilt > 0.02):
@@ -159,27 +223,167 @@ class OCREngine:
                                     [0, max_h - 1]
                                 ], dtype="float32")
                                 M = cv2.getPerspectiveTransform(rect_orig, dst)
+                                M_inv = np.linalg.inv(M)
                                 warped = cv2.warpPerspective(arr, M, (max_w, max_h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+                                # Trim 1.2% safety border inset so dark desk edges never bleed into OCR
+                                ix = max(4, int(max_w * 0.012))
+                                iy = max(4, int(max_h * 0.010))
+                                if max_w - 2 * ix > 100 and max_h - 2 * iy > 100:
+                                    warped = warped[iy : max_h - iy, ix : max_w - ix]
+                                else:
+                                    ix, iy = 0, 0
+
+                                coord_info = {
+                                    "mode": "perspective",
+                                    "M_inv": M_inv,
+                                    "inset_x": ix,
+                                    "inset_y": iy
+                                }
                                 try:
                                     from core.logger import log
-                                    log.info(f"Perspective dewarp applied: flattened {w}x{h} -> {max_w}x{max_h}")
+                                    log.info(f"Perspective dewarp applied: flattened {w}x{h} -> {warped.shape[1]}x{warped.shape[0]}")
                                 except Exception:
                                     pass
-                                return Image.fromarray(warped)
+                                return Image.fromarray(warped), coord_info
 
-                        # Fallback: clean bounding-box crop
+                        # Fallback: clean bounding-box crop with 1% inward trim against dark edges
                         x, y, cw, ch = cv2.boundingRect(largest)
-                        pad_x = int((cw / scale) * 0.015)
-                        pad_y = int((ch / scale) * 0.015)
-                        orig_x = max(0, int(x / scale) - pad_x)
-                        orig_y = max(0, int(y / scale) - pad_y)
-                        orig_w = min(w - orig_x, int(cw / scale) + 2 * pad_x)
-                        orig_h = min(h - orig_y, int(ch / scale) + 2 * pad_y)
+                        orig_x = max(0, int(x / scale))
+                        orig_y = max(0, int(y / scale))
+                        orig_w = min(w - orig_x, int(cw / scale))
+                        orig_h = min(h - orig_y, int(ch / scale))
                         if orig_w > 0.3 * w and orig_h > 0.3 * h:
-                            return img.crop((orig_x, orig_y, orig_x + orig_w, orig_y + orig_h))
+                            ix = max(2, int(orig_w * 0.008))
+                            iy = max(2, int(orig_h * 0.008))
+                            cx1 = min(w - 1, orig_x + ix)
+                            cy1 = min(h - 1, orig_y + iy)
+                            cx2 = max(cx1 + 50, orig_x + orig_w - ix)
+                            cy2 = max(cy1 + 50, orig_y + orig_h - iy)
+                            coord_info = {
+                                "mode": "crop",
+                                "offset_x": cx1,
+                                "offset_y": cy1,
+                                "inset_x": 0,
+                                "inset_y": 0
+                            }
+                            return img.crop((cx1, cy1, cx2, cy2)), coord_info
         except Exception:
             pass
-        return img
+        return img, coord_info
+
+    def crop_document_if_desk(self, img: Image.Image) -> Image.Image:
+        """Backward-compatible wrapper returning just the cropped/warped PIL image."""
+        cropped, _ = self.crop_document_if_desk_with_map(img)
+        return cropped
+
+    def clean_looseleaf_artifacts(self, img: Image.Image) -> Tuple[Image.Image, Optional[int]]:
+        """
+        Automatically cleans standard looseleaf notebook artifacts WITHOUT erasing real ink:
+          1. Circular dark binder holes in left/right 14% margins -> filled with local paper color
+          2. Vertical red looseleaf margin line -> red/pink pixels lifted to paper white (preserving crossing ink!)
+          3. Pale blue horizontal ruled lines (when detected) -> gently lifted to paper white so baseline lines
+             do not turn cursive 'כ' into 'ב'.
+        Returns (cleaned_img, red_margin_x_or_None).
+        """
+        red_margin_x = None
+        try:
+            rgb = np.array(img.convert("RGB"))
+            h, w, _ = rgb.shape
+            if h < 200 or w < 200:
+                return img, None
+
+            # Estimate bright paper background color (75th percentile in center region)
+            center_patch = rgb[int(h * 0.15) : int(h * 0.85), int(w * 0.20) : int(w * 0.85)]
+            paper_rgb = np.percentile(center_patch.reshape(-1, 3), 75, axis=0).astype(np.uint8)
+            gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+
+            # 1. Detect & fill dark circular binder holes in left 14% and right 14% strips
+            margin_w = int(w * 0.14)
+            page_area = float(h * w)
+            min_hole_area = max(120.0, page_area * 0.00035)
+            max_hole_area = page_area * 0.0075
+
+            holes_removed = 0
+            for x_off in (0, w - margin_w):
+                strip = gray[:, x_off : x_off + margin_w]
+                # Binder holes are much darker than the paper around them
+                dark_thresh = max(60, int(np.percentile(strip, 65)) - 65)
+                _, mask = cv2.threshold(strip, dark_thresh, 255, cv2.THRESH_BINARY_INV)
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                for cnt in contours:
+                    area = cv2.contourArea(cnt)
+                    if min_hole_area <= area <= max_hole_area:
+                        bx, by, bw, bh = cv2.boundingRect(cnt)
+                        aspect = bw / max(1.0, float(bh))
+                        peri = cv2.arcLength(cnt, True)
+                        circ = (4.0 * np.pi * area / (peri * peri)) if peri > 0 else 0.0
+                        fill_ratio = area / max(1.0, float(bw * bh))
+                        if 0.55 <= aspect <= 1.85 and circ >= 0.42 and fill_ratio >= 0.52:
+                            # Expand slightly to erase the dark hole rim shadow too
+                            cx = x_off + bx + bw // 2
+                            cy = by + bh // 2
+                            rad = int(max(bw, bh) * 0.68) + 6
+                            cv2.circle(rgb, (cx, cy), rad, tuple(int(c) for c in paper_rgb), -1)
+                            holes_removed += 1
+
+            # 2. Detect & surgically remove vertical red/pink looseleaf margin line
+            r_f = rgb[:, :, 0].astype(np.float32)
+            g_f = rgb[:, :, 1].astype(np.float32)
+            b_f = rgb[:, :, 2].astype(np.float32)
+            redness = r_f - 0.5 * (g_f + b_f)
+            col_red = redness.mean(axis=0)
+            med_red = float(np.median(col_red))
+
+            left_lim = int(w * 0.25)
+            cand_x = int(np.argmax(col_red[:left_lim]))
+            if float(col_red[cand_x]) > med_red + 7.5:
+                red_margin_x = cand_x
+                # Remove ONLY red/pink margin pixels in a narrow ±14px band around cand_x
+                # Dark blue/black handwriting ink crossing the red line has low R (< 120) or low redness, so it is preserved!
+                band_x1 = max(0, cand_x - 14)
+                band_x2 = min(w, cand_x + 15)
+                band_red = redness[:, band_x1:band_x2]
+                band_r = rgb[:, band_x1:band_x2, 0]
+                red_px_mask = (band_red > 14.0) & (band_r > 120)
+                if np.any(red_px_mask):
+                    # Dilate slightly horizontally (3px) to clean pink anti-aliasing halo
+                    red_u8 = (red_px_mask.astype(np.uint8) * 255)
+                    red_u8 = cv2.dilate(red_u8, np.ones((1, 3), np.uint8))
+                    # Re-protect dark ink pixels
+                    dark_ink = gray[:, band_x1:band_x2] < 118
+                    erase_mask = (red_u8 > 0) & (~dark_ink)
+                    rgb[:, band_x1:band_x2][erase_mask] = paper_rgb
+
+            # 3. Clean pale-blue ruled lines ONLY inside the empty left margin (strictly left of red_margin_x)
+            # so line boxes never stretch into the empty binder-hole margin, while preserving 100% of
+            # faint blue ballpoint pen & light pencil strokes inside the main writing area!
+            if red_margin_x is not None and red_margin_x > 20:
+                blue_excess = b_f - r_f
+                left_slice = slice(0, max(0, red_margin_x - 2))
+                hsv_left = cv2.cvtColor(rgb[:, left_slice], cv2.COLOR_RGB2HSV)
+                hl, sl, vl = cv2.split(hsv_left)
+                left_blue = (
+                    (hl >= 85) & (hl <= 138) &
+                    (sl >= 14) & (sl <= 185) &
+                    (vl >= 120) &
+                    (blue_excess[:, left_slice] >= 6.0) &
+                    (gray[:, left_slice] >= 115)
+                )
+                if np.any(left_blue):
+                    rgb[:, left_slice][left_blue] = paper_rgb
+
+            if holes_removed > 0 or red_margin_x is not None:
+                try:
+                    from core.logger import log
+                    log.info(f"Looseleaf cleaner: erased {holes_removed} binder hole(s), red_margin_x={red_margin_x}")
+                except Exception:
+                    pass
+
+            return Image.fromarray(rgb), red_margin_x
+        except Exception:
+            return img, None
 
     def clean_shadows_and_lines(self, img: Image.Image) -> Image.Image:
         """
@@ -189,22 +393,18 @@ class OCREngine:
         try:
             rgb = np.array(img.convert("RGB"))
 
-            # 1. Suppress pale blue ruled lines in HSV space (preserve dark blue pen ink by checking V > 135)
             hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
             h_ch, s_ch, v_ch = cv2.split(hsv)
             blue_line_mask = (h_ch >= 88) & (h_ch <= 135) & (s_ch >= 22) & (s_ch <= 160) & (v_ch >= 140)
             cleaned = rgb.copy()
-            # Gently blend pale blue lines toward white paper
             cleaned[blue_line_mask] = np.clip(cleaned[blue_line_mask].astype(np.int32) + 55, 0, 255).astype(np.uint8)
 
-            # 2. Morphological background shadow normalization on luminance
             lab = cv2.cvtColor(cleaned, cv2.COLOR_RGB2LAB)
             l_ch, a_ch, b_ch = cv2.split(lab)
             dilated = cv2.dilate(l_ch, np.ones((7, 7), np.uint8))
             bg_img = cv2.medianBlur(dilated, 21)
             diff_img = 255 - cv2.absdiff(l_ch, bg_img)
             norm_l = cv2.normalize(diff_img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC1)
-            # Blend 65% normalized luminance + 35% original luminance so faint pencil strokes stay readable
             blended_l = cv2.addWeighted(norm_l, 0.65, l_ch, 0.35, 0)
             merged_lab = cv2.merge([blended_l, a_ch, b_ch])
             out_rgb = cv2.cvtColor(merged_lab, cv2.COLOR_LAB2RGB)
@@ -225,7 +425,6 @@ class OCREngine:
                 return None
 
             gray = cv2.cvtColor(np.array(img_rgb), cv2.COLOR_RGB2GRAY)
-            # Examine center vertical strip [35% .. 65%] of width, ignoring top/bottom 10% margins
             x_start = int(w * 0.35)
             x_end = int(w * 0.65)
             y_start = int(h * 0.10)
@@ -233,7 +432,6 @@ class OCREngine:
             roi = gray[y_start:y_end, x_start:x_end]
 
             col_means = np.mean(roi, axis=0)
-            # Smooth column profile to avoid single-letter spikes
             k = max(5, int(w * 0.01) | 1)
             smooth = np.convolve(col_means, np.ones(k) / k, mode="same")
 
@@ -243,7 +441,6 @@ class OCREngine:
 
             if force or (median_val - valley_val >= 16.0):
                 split_x = x_start + min_idx
-                # Hebrew RTL order: Right page first, then Left page!
                 right_page = img_rgb.crop((split_x, 0, w, h))
                 left_page = img_rgb.crop((0, 0, split_x, h))
                 return (right_page, left_page)
@@ -277,32 +474,31 @@ class OCREngine:
             pass
         return img, False
 
-    def verify_upright_orientation(self, img: Image.Image) -> Image.Image:
+    def verify_upright_orientation(self, img: Image.Image) -> Tuple[Image.Image, bool]:
         """
         Checks if a page is upside-down (180°) by comparing neural OCR confidence on
         up to 2 middle line crops upright vs. rotated 180°.
+        Returns (img, was_flipped_180).
         """
         try:
             if not self.is_ready():
-                return img
+                return img, False
             from core.hebocr.page.segment import segment_page
 
             crops, _, _ = segment_page(img)
             if not crops:
-                return img
+                return img, False
 
-            # Sample up to 2 substantial middle lines
             mid = len(crops) // 2
             sample = crops[max(0, mid - 1) : min(len(crops), mid + 1)]
             if not sample:
-                return img
+                return img, False
 
             _, confs_up = self._recognizer.read(sample, return_confidence=True)
             avg_up = float(np.mean(confs_up)) if confs_up else 0.0
 
-            # Only test 180° flip if upright confidence looks suspiciously low (< 0.72)
             if avg_up >= 0.72:
-                return img
+                return img, False
 
             sample_flipped = [c.rotate(180) for c in sample]
             _, confs_flip = self._recognizer.read(sample_flipped, return_confidence=True)
@@ -314,10 +510,58 @@ class OCREngine:
                     log.info(f"Auto-orient 180° fix: Upright conf={avg_up:.2f}, Flipped 180° conf={avg_flip:.2f}. Flipping page upright.")
                 except Exception:
                     pass
-                return img.rotate(180)
+                return img.rotate(180), True
         except Exception:
             pass
-        return img
+        return img, False
+
+    def preprocess_image_with_meta(
+        self,
+        img: Image.Image,
+        enhance_contrast: bool = True,
+        auto_crop_desk: bool = True,
+        auto_orient: bool = True,
+        clean_shadows_lines: Optional[bool] = None
+    ) -> Tuple[Image.Image, dict]:
+        """
+        Cleans and standardizes image for optimal Hebrew handwriting recognition.
+        Returns (preprocessed_img, meta_dict) containing inverse coordinate mapping & red_margin_x.
+        """
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+
+        img = ImageOps.exif_transpose(img)
+        orig_w, orig_h = img.size
+
+        if auto_orient:
+            img, _ = self.auto_orient_if_sideways(img)
+            orig_w, orig_h = img.size
+
+        coord_info = {"mode": "identity", "inset_x": 0, "inset_y": 0}
+        if auto_crop_desk:
+            img, coord_info = self.crop_document_if_desk_with_map(img)
+
+        red_margin_x = None
+        if self.clean_looseleaf:
+            img, red_margin_x = self.clean_looseleaf_artifacts(img)
+
+        use_clean = self.clean_shadows_lines if clean_shadows_lines is None else clean_shadows_lines
+        if use_clean:
+            img = self.clean_shadows_and_lines(img)
+
+        if enhance_contrast:
+            enhancer = ImageEnhance.Contrast(img)
+            img = enhancer.enhance(1.30)
+            sharpener = ImageEnhance.Sharpness(img)
+            img = sharpener.enhance(1.18)
+
+        meta = {
+            "coord_info": coord_info,
+            "orig_size": (orig_w, orig_h),
+            "proc_size": img.size,
+            "red_margin_x": red_margin_x
+        }
+        return img, meta
 
     def preprocess_image(
         self,
@@ -327,29 +571,15 @@ class OCREngine:
         auto_orient: bool = True,
         clean_shadows_lines: Optional[bool] = None
     ) -> Image.Image:
-        """Cleans and standardizes image for optimal Hebrew handwriting recognition."""
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-
-        img = ImageOps.exif_transpose(img)
-
-        if auto_orient:
-            img, _ = self.auto_orient_if_sideways(img)
-
-        if auto_crop_desk:
-            img = self.crop_document_if_desk(img)
-
-        use_clean = self.clean_shadows_lines if clean_shadows_lines is None else clean_shadows_lines
-        if use_clean:
-            img = self.clean_shadows_and_lines(img)
-
-        if enhance_contrast:
-            enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(1.35)
-            sharpener = ImageEnhance.Sharpness(img)
-            img = sharpener.enhance(1.2)
-
-        return img
+        """Backward-compatible wrapper returning preprocessed image."""
+        out, _ = self.preprocess_image_with_meta(
+            img,
+            enhance_contrast=enhance_contrast,
+            auto_crop_desk=auto_crop_desk,
+            auto_orient=auto_orient,
+            clean_shadows_lines=clean_shadows_lines
+        )
+        return out
 
     def recognize_region(
         self,
@@ -393,7 +623,9 @@ class OCREngine:
         verify_180: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
-        Runs full-page segmentation and OCR recognition on an image.
+        Runs full-page segmentation and OCR recognition on an image,
+        filtering looseleaf margin noise and mapping line bounding boxes
+        back into exact displayed-image coordinates.
         """
         self.load_model()
 
@@ -402,15 +634,18 @@ class OCREngine:
         else:
             img = image_or_path
 
-        img = self.preprocess_image(img, auto_crop_desk=auto_crop_desk, auto_orient=auto_orient)
+        img, meta = self.preprocess_image_with_meta(img, auto_crop_desk=auto_crop_desk, auto_orient=auto_orient)
+        proc_w, proc_h = meta["proc_size"]
+        orig_w, orig_h = meta["orig_size"]
+        coord_info = meta["coord_info"]
+        red_margin_x = meta["red_margin_x"]
 
         do_verify_180 = self.check_upside_down if verify_180 is None else verify_180
+        flipped_180 = False
         if do_verify_180:
             if progress_callback:
                 progress_callback(5, 100, "Checking page orientation...")
-            img = self.verify_upright_orientation(img)
-
-        w, h = img.size
+            img, flipped_180 = self.verify_upright_orientation(img)
 
         if progress_callback:
             progress_callback(10, 100, "Segmenting handwriting lines...")
@@ -450,6 +685,35 @@ class OCREngine:
             if not raw_line_text or raw_line_text.startswith("{'text'") or raw_line_text.startswith("[{'text'"):
                 continue
 
+            # Filter out stray border/margin noise boxes (e.g. top dark edge strip or residual left-margin speck)
+            if isinstance(box, dict):
+                bx = float(box.get("x", 0))
+                by = float(box.get("y", 0))
+                bw = float(box.get("w", 0))
+                bh = float(box.get("h", 0))
+                clean_len = len(raw_line_text.replace(" ", "").replace("'", "").replace('"', ""))
+
+                # 1. Tiny 1-2 char sliver hugging the top/bottom paper edge
+                if (by < 18 or (by + bh) > proc_h - 12) and clean_len <= 2 and bh < 60:
+                    continue
+
+                # 2. Tiny 1-2 char noise blob strictly inside the far-left binder-hole margin (left of red margin line)
+                if red_margin_x is not None and (bx + bw) < (red_margin_x - 10) and clean_len <= 3 and bw < proc_w * 0.12:
+                    continue
+
+                # 3. Single stray character box smaller than 4% width on extreme left/right edge
+                if clean_len <= 1 and (bx < proc_w * 0.06 or (bx + bw) > proc_w * 0.96) and bw < proc_w * 0.08:
+                    continue
+
+            # Strip single isolated phantom edge letters caused by thin paper border strokes
+            # e.g. trailing ' ן' or leading 'ן ' / 'ך ' separated by space
+            import re as _re
+            raw_line_text = _re.sub(r'^[ןך]\s+', '', raw_line_text)
+            raw_line_text = _re.sub(r'\s+[ןך]$', '', raw_line_text)
+            raw_line_text = raw_line_text.strip()
+            if not raw_line_text:
+                continue
+
             if learning_engine:
                 clean_text, applied = learning_engine.apply_corrections(raw_line_text)
                 total_corrections += len(applied)
@@ -457,12 +721,24 @@ class OCREngine:
                 clean_text = raw_line_text
                 applied = []
 
+            # Map bounding box from preprocessed/warped OCR coordinates back to displayed image pixels!
+            mapped_box = box
+            if isinstance(box, dict):
+                if flipped_180:
+                    box = {
+                        "x": int(proc_w - box.get("x", 0) - box.get("w", 0)),
+                        "y": int(proc_h - box.get("y", 0) - box.get("h", 0)),
+                        "w": int(box.get("w", 0)),
+                        "h": int(box.get("h", 0))
+                    }
+                mapped_box = _map_box_to_original(box, coord_info, orig_w, orig_h)
+
             lines_data.append({
                 'index': len(lines_data),
                 'text': clean_text,
                 'raw_text': raw_line_text,
                 'confidence': confidence,
-                'box': box,
+                'box': mapped_box,
                 'skew': skew,
                 'applied': applied
             })
@@ -476,5 +752,5 @@ class OCREngine:
             'lines': lines_data,
             'full_text': "\n".join(full_text_lines),
             'corrections_applied': total_corrections,
-            'image_size': (w, h)
+            'image_size': (orig_w, orig_h)
         }
