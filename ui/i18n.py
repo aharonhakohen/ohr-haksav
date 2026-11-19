@@ -45,6 +45,7 @@ STRINGS = {
         "menu_scan": "Scan && OCR",
         "menu_scan_current": "Scan Current Page (F5)",
         "menu_scan_all": "Scan All Pages (Shift+F5)",
+        "menu_rescan_all": "Re-scan All Pages (Overwrite) (Ctrl+Shift+F5)",
         "menu_scan_enhance": "Enhance Ink / High Contrast",
 
         "menu_learning": "Learning && Profiles",
@@ -135,7 +136,8 @@ STRINGS = {
         "btn_scan": "⚡ Scan Current Page",
         "btn_scan_menu": "Scan ▾",
         "btn_scan_current_opt": "⚡ Scan Current Page (F5)",
-        "btn_scan_all_opt": "⚡⚡ Scan All Pages (Shift+F5)",
+        "btn_scan_all_opt": "⚡⚡ Scan All Unscanned Pages (Shift+F5)",
+        "btn_rescan_all_opt": "🔄 Re-scan All Pages (Overwrite)",
         "btn_scan_tooltip": "Run offline neural OCR recognition on the active page",
         "btn_scan_all": "⚡⚡ Scan All Pages",
         "btn_scan_all_tooltip": "Batch-scan all attached notebook pages sequentially",
@@ -173,6 +175,10 @@ STRINGS = {
         "page_status_error": "Scan error",
         "session_restore_title": "Restore Previous Session",
         "session_restore_msg": "Ohr HaKsav found an unsaved session with {count} page(s) from {date}.\n\nWould you like to restore your work?",
+        "rescan_all_title": "Re-scan All Pages",
+        "rescan_all_already_msg": "All {count} pages in this notebook have already been scanned.\n\nWould you like to re-scan all {count} pages from scratch with the current OCR engine & settings?\n(Previous scans and unsaved edits on those pages will be replaced.)",
+        "rescan_all_confirm_msg": "Re-scan all {count} pages in this notebook from scratch?\n\nAny previous OCR text and unsaved manual edits on those pages will be replaced with fresh scans.",
+        "session_upgrade_hint": "Session restored from v{old_ver} — click Scan ▾ → Re-scan All Pages to apply the latest v{new_ver} OCR engine improvements!",
 
         # Viewer panel
         "viewer_title": "Page Image",
@@ -312,6 +318,7 @@ STRINGS = {
         "menu_scan": "סריקה ופענוח",
         "menu_scan_current": "סרוק עמוד נוכחי (F5)",
         "menu_scan_all": "סרוק את כל העמודים (Shift+F5)",
+        "menu_rescan_all": "סרוק מחדש את כל העמודים (Ctrl+Shift+F5)",
         "menu_scan_enhance": "הדגשת דיו / ניגודיות גבוהה",
 
         "menu_learning": "פרופילים וזיכרון",
@@ -402,7 +409,8 @@ STRINGS = {
         "btn_scan": "⚡ סרוק עמוד נוכחי",
         "btn_scan_menu": "סריקה ▾",
         "btn_scan_current_opt": "⚡ סרוק עמוד נוכחי (F5)",
-        "btn_scan_all_opt": "⚡⚡ סרוק את כל העמודים (Shift+F5)",
+        "btn_scan_all_opt": "⚡⚡ סרוק עמודים שטרם נסרקו (Shift+F5)",
+        "btn_rescan_all_opt": "🔄 סרוק מחדש את כל העמודים (דריסה)",
         "btn_scan_tooltip": "הפעל זיהוי כתב יד OCR אופליין עבור העמוד הנוכחי",
         "btn_scan_all": "⚡⚡ סרוק הכל",
         "btn_scan_all_tooltip": "סרוק ברצף את כל העמודים שצורפו",
@@ -440,6 +448,10 @@ STRINGS = {
         "page_status_error": "שגיאה בסריקה",
         "session_restore_title": "שחזור הפעלה קודמת",
         "session_restore_msg": "נמצאה הפעלה עם {count} עמודים מתאריך {date}.\n\nהאם ברצונך לשחזר את העבודה הקודמת?",
+        "rescan_all_title": "סריקה מחדש של כל העמודים",
+        "rescan_all_already_msg": "כל {count} העמודים במחברת כבר נסרקו.\n\nהאם ברצונך לסרוק מחדש את כל {count} העמודים עם מנוע ה-OCR וההגדרות הנוכחיות?\n(סריקות קודמות ועריכות שלא נשמרו בעמודים אלו יוחלפו.)",
+        "rescan_all_confirm_msg": "לסרוק מחדש את כל {count} העמודים במחברת?\n\nטקסט OCR קודם ועריכות ידניות שלא נשמרו בעמודים אלו יוחלפו בסריקות חדשות.",
+        "session_upgrade_hint": "הפעלה שוחזרה מגרסה v{old_ver} — לחץ על סריקה ▾ ← סרוק מחדש את כל העמודים כדי להחיל את שיפורי ה-OCR של גרסה v{new_ver}!",
 
         # Viewer panel
         "viewer_title": "תצלום הדף",

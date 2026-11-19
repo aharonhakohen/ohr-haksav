@@ -201,5 +201,5 @@ For network administrators in Yeshivas, computer centers, and school domains:
 1. **SHA-256 Integrity Verification & Authenticode Signing:** Every setup installer and lightweight delta patch is verified against its published SHA-256 digest before execution. Domain admins can also sign internal builds using `scripts/create_internal_domain_cert.ps1` and `OHR_HAKSAV_CERT_THUMBPRINT`.
 2. **UNC Server Share & Lightweight Delta Patch Updates:**
    * In **Update Source & Settings**, set the update source to a local UNC network share (e.g. `\\newltcserver\Installs\OhrHaKsav`).
-   * Drop `version.json`, `OhrHaKsav_Patch_v1.4.1.zip` (~30–50 MB fast update), and `OhrHaKsav_Setup_v1.4.1.exe` onto the network share. Workstations automatically verify SHA-256 and apply lightweight patches in seconds with zero internet traffic.
+   * Drop `version.json`, `OhrHaKsav_Patch_v1.4.2.zip` (~49 MB fast update), and `OhrHaKsav_Setup_v1.4.2.exe` onto the network share. Workstations automatically verify SHA-256 and apply lightweight patches in seconds with zero internet traffic.
 3. **Silent Background Update Polling:** The app quietly checks for updates on launch without interrupting teachers or students, gently displaying an in-app banner across the top toolbar when a release is ready.

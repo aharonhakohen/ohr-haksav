@@ -111,9 +111,9 @@ def get_current_app_version() -> str:
     vpath = get_resource_path("version.json")
     try:
         with open(vpath, "r", encoding="utf-8") as f:
-            return json.load(f).get("version", "1.4.1")
+            return json.load(f).get("version", "1.4.2")
     except Exception:
-        return "1.4.1"
+        return "1.4.2"
 
 
 CURRENT_VERSION = get_current_app_version()
@@ -1076,9 +1076,12 @@ class UpdateDialog(QDialog):
             return
 
         ps_script = os.path.join(tempfile.gettempdir(), "ohr_haksav_apply_patch.ps1")
+        clean_ver = str(remote_ver).lstrip("vV")
         script_content = (
             "Start-Sleep -Seconds 2\n"
             f"Expand-Archive -Path '{patch_zip_path}' -DestinationPath '{app_dir}' -Force\n"
+            f"Get-ChildItem -Path '{app_dir}' -Filter 'OhrHaKsav_v*.exe' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue\n"
+            f"Copy-Item -Path (Join-Path '{app_dir}' 'OhrHaKsav.exe') -Destination (Join-Path '{app_dir}' 'OhrHaKsav_v{clean_ver}.exe') -Force -ErrorAction SilentlyContinue\n"
             f"Start-Process -FilePath '{exe_path}'\n"
             f"Remove-Item -Path '{patch_zip_path}' -Force -ErrorAction SilentlyContinue\n"
         )

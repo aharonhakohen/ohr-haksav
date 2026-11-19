@@ -148,12 +148,14 @@ def test_sha256_and_strict_offline():
 
 
 def test_single_pass_and_cursive_fixes():
-    """Verify single-pass apply_corrections prevents תוס'' double-apostrophe and resolves cursive typos safely."""
+    """Verify single-pass apply_corrections prevents תוס'' double-apostrophe and resolves cursive & boxed בס"ד typos safely."""
     le = LearningEngine()
-    sample = "קוס כתב לבאורה ביון הבלי בלי דבר ברור דברורות בופר"
+    sample = "נבסיידן סיידן בסידן בסייקן שיעורט קוס כתב לבאורה ביון הבלי בלי דבר ברור דברורות בופר"
     out, applied = le.apply_corrections(sample)
     assert "תוס''" not in out, f"Double apostrophe bug recurred: {out}"
     assert "תוס'" in out
+    assert out.count('בס"ד') >= 4, f"Boxed בס\"ד auto-fixes did not trigger cleanly: {out}"
+    assert "שיעור ט'" in out
     assert "לכאורה" in out
     assert "כיון" in out
     assert "הכלי" in out
@@ -164,19 +166,37 @@ def test_single_pass_and_cursive_fixes():
 
 
 def test_looseleaf_cleaner_and_inverse_box_map():
-    """Verify binder holes & red margin line are erased and perspective boxes map back to original space."""
+    """Verify shadowed binder holes (crossed by blue ruled lines) & slanted shadowed red margin lines are erased cleanly."""
     engine = OCREngine()
-    # Create synthetic looseleaf page with 3 binder holes and a red vertical margin line at x=80
-    arr = np.full((800, 600, 3), 235, dtype=np.uint8)
+    # Create synthetic looseleaf page with shaded bottom, pale blue ruled lines, 3 binder holes, and a slanted red margin line
+    arr = np.full((900, 600, 3), 235, dtype=np.uint8)
+    # Darken bottom 30% to simulate desk shadow
+    arr[600:, :] = 185
+    # Draw pale blue ruled lines across the entire page including through the bottom binder hole!
+    for y in range(100, 880, 40):
+        arr[y : y + 3, :] = [145, 175, 210]
     cv2.circle(arr, (35, 140), 18, (25, 25, 25), -1)
-    cv2.circle(arr, (35, 400), 18, (25, 25, 25), -1)
-    cv2.circle(arr, (35, 660), 18, (25, 25, 25), -1)
-    arr[:, 80:84] = [215, 110, 120]  # Red margin line
+    cv2.circle(arr, (35, 450), 18, (25, 25, 25), -1)
+    cv2.circle(arr, (35, 760), 18, (25, 25, 25), -1)
+    # Slanted red margin line (drifts from x=88 at top to x=76 at bottom, dark red in bottom shadow!)
+    for y in range(900):
+        rx = int(round(88 - 12.0 * (y / 900.0)))
+        if y < 600:
+            arr[y, rx : rx + 4] = [215, 110, 120]
+        else:
+            arr[y, rx : rx + 4] = [145, 85, 88]  # Dark red in shadow (gray < 115, high redness)
+
     cleaned, red_x = engine.clean_looseleaf_artifacts(Image.fromarray(arr))
     c_arr = np.array(cleaned)
-    assert red_x is not None and abs(red_x - 81) <= 5
-    # Verify middle binder hole was filled to bright paper color
-    assert float(c_arr[400, 35].mean()) > 200.0, "Binder hole was not erased!"
+    assert red_x is not None and 70 <= red_x <= 95
+    # Verify ALL 3 binder holes (including the bottom shadowed hole crossed by blue lines!) were erased
+    assert float(c_arr[140, 35].mean()) > 190.0, "Top binder hole was not erased!"
+    assert float(c_arr[450, 35].mean()) > 190.0, "Middle binder hole was not erased!"
+    assert float(c_arr[760, 35].mean()) > 145.0, "Bottom shadowed binder hole was not erased!"
+    # Verify shadowed red margin line at bottom (y=800, x~77) was erased cleanly
+    rx_bot = int(round(88 - 12.0 * (800 / 900.0)))
+    bot_redness = float(c_arr[800, rx_bot + 1, 0]) - 0.5 * (float(c_arr[800, rx_bot + 1, 1]) + float(c_arr[800, rx_bot + 1, 2]))
+    assert bot_redness < 12.0, f"Shadowed bottom red margin line survived: redness={bot_redness}"
 
     # Verify inverse box mapping on tilted desk image
     desk = np.full((600, 600, 3), 25, dtype=np.uint8)
@@ -201,4 +221,4 @@ if __name__ == "__main__":
     test_sha256_and_strict_offline()
     test_single_pass_and_cursive_fixes()
     test_looseleaf_cleaner_and_inverse_box_map()
-    print("All v1.4.1 unit tests in test_suite.py passed successfully!")
+    print("All v1.4.2 unit tests in test_suite.py passed successfully!")
