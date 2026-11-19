@@ -290,6 +290,11 @@ class MainWindow(QMainWindow):
         self.act_scan_all.triggered.connect(self.scan_all_pages)
         self.m_scan.addAction(self.act_scan_all)
 
+        self.act_rescan_all = QAction(t("menu_rescan_all"), self)
+        self.act_rescan_all.setShortcut(QKeySequence("Ctrl+Shift+F5"))
+        self.act_rescan_all.triggered.connect(lambda: self.rescan_all_pages(confirm=True))
+        self.m_scan.addAction(self.act_rescan_all)
+
         self.act_scan_region = QAction("✂ Scan Drawn Region (Margin Note / Paragraph)", self)
         self.act_scan_region.setShortcut(QKeySequence("Ctrl+R"))
         self.act_scan_region.triggered.connect(self.start_region_selection)
@@ -482,6 +487,9 @@ class MainWindow(QMainWindow):
         self.act_scan_dropdown_curr.triggered.connect(self.scan_current_page)
         self.act_scan_dropdown_all = self.scan_menu.addAction(t("btn_scan_all_opt"))
         self.act_scan_dropdown_all.triggered.connect(self.scan_all_pages)
+        self.scan_menu.addSeparator()
+        self.act_scan_dropdown_rescan = self.scan_menu.addAction(t("btn_rescan_all_opt"))
+        self.act_scan_dropdown_rescan.triggered.connect(lambda: self.rescan_all_pages(confirm=True))
         self.btn_scan.setMenu(self.scan_menu)
         bar.addWidget(self.btn_scan)
 
@@ -742,6 +750,8 @@ class MainWindow(QMainWindow):
         self.m_scan.setTitle(t("menu_scan"))
         self.act_scan_curr.setText(t("menu_scan_current"))
         self.act_scan_all.setText(t("menu_scan_all"))
+        if hasattr(self, "act_rescan_all"):
+            self.act_rescan_all.setText(t("menu_rescan_all"))
         self.act_scan_contrast.setText(t("menu_scan_enhance"))
 
         self.m_learn.setTitle(t("menu_learning"))
@@ -790,6 +800,8 @@ class MainWindow(QMainWindow):
         self.btn_scan.setToolTip("""<b>⚡ Scan Page (F5)</b><br>Step 2: Run offline neural handwriting recognition on the active notebook page.""")
         self.act_scan_dropdown_curr.setText(t("btn_scan_current_opt"))
         self.act_scan_dropdown_all.setText(t("btn_scan_all_opt"))
+        if hasattr(self, "act_scan_dropdown_rescan"):
+            self.act_scan_dropdown_rescan.setText(t("btn_rescan_all_opt"))
 
         self.btn_learn.setText(f"🎓 {t('btn_learn_short')}")
         self.btn_learn.setMinimumWidth(self.btn_learn.fontMetrics().horizontalAdvance(self.btn_learn.text()) + 32)
@@ -1042,8 +1054,11 @@ class MainWindow(QMainWindow):
         """Scans a specific page index in background without overwriting or yanking other pages."""
         if target_idx < 0 or target_idx >= len(self.pages):
             return
+        if hasattr(self, "active_worker") and self.active_worker and self.active_worker.isRunning():
+            return
 
         pdata = self.pages[target_idx]
+        self._scanning_page_idx = target_idx
         pdata["status"] = t("page_status_processing")
         self._update_page_list_items()
 
@@ -1064,7 +1079,11 @@ class MainWindow(QMainWindow):
     def _on_ocr_progress(self, cur, tot, msg):
         pct = int((cur / max(1, tot)) * 100)
         self.progress_bar.setValue(pct)
-        self.lbl_status.setText(f"{msg} ({cur}/{tot})")
+        s_idx = getattr(self, "_scanning_page_idx", -1)
+        if 0 <= s_idx < len(self.pages) and len(self.pages) > 1:
+            self.lbl_status.setText(f"Page {s_idx + 1}/{len(self.pages)} — {msg} ({pct}%)")
+        else:
+            self.lbl_status.setText(f"{msg} ({cur}/{tot})")
 
     def _on_ocr_finished(self, page_idx: int, res: dict):
         self.progress_bar.setVisible(False)
@@ -1124,7 +1143,15 @@ class MainWindow(QMainWindow):
 
         unscanned = [i for i, p in enumerate(self.pages) if p["status"] != t("page_status_scanned")]
         if not unscanned:
-            QMessageBox.information(self, "Complete", "All pages in notebook have already been scanned!")
+            reply = QMessageBox.question(
+                self,
+                t("rescan_all_title"),
+                t("rescan_all_already_msg", count=len(self.pages)),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.rescan_all_pages(confirm=False)
             return
 
         if self.current_page_idx < 0 and self.pages:
@@ -1132,6 +1159,36 @@ class MainWindow(QMainWindow):
 
         self._batch_scanning = True
         log.info(f"Initiated 'Scan All Pages' background batch mode for {len(unscanned)} unscanned page(s)...")
+        self._scan_next_batch_page()
+
+    def rescan_all_pages(self, confirm: bool = True):
+        """Resets all attached pages and re-scans the entire notebook in background with current OCR settings."""
+        if not self.pages:
+            QMessageBox.information(self, "Notice", "Please attach images to scan first.")
+            return
+        if hasattr(self, "active_worker") and self.active_worker and self.active_worker.isRunning():
+            return
+
+        if confirm:
+            reply = QMessageBox.question(
+                self,
+                t("rescan_all_title"),
+                t("rescan_all_confirm_msg", count=len(self.pages)),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        for p in self.pages:
+            p["status"] = t("page_status_ready")
+        self._update_page_list_items()
+
+        if self.current_page_idx < 0 and self.pages:
+            self.list_pages.setCurrentRow(0)
+
+        self._batch_scanning = True
+        log.info(f"Initiated 'Re-scan All Pages' background batch mode for all {len(self.pages)} page(s)...")
         self._scan_next_batch_page()
 
     def _scan_next_batch_page(self):
@@ -1629,7 +1686,7 @@ class MainWindow(QMainWindow):
                 status_text = "⏳ " + t("page_status_processing")
             elif cur_status == t("page_status_error"):
                 status_text = "❌ " + t("page_status_error")
-            elif not raw:
+            elif cur_status == t("page_status_ready") or not raw:
                 status_text = "⚪ " + t("page_status_ready")
             elif edited != last_learned:
                 status_text = "🟠 " + t("page_status_pending")
@@ -1671,8 +1728,14 @@ class MainWindow(QMainWindow):
                 return
 
             from datetime import datetime
+            try:
+                from ui.update_dialog import get_current_app_version
+                cur_ver = get_current_app_version()
+            except Exception:
+                cur_ver = ""
             data = {
                 "saved_at": datetime.now().isoformat(),
+                "app_version": cur_ver,
                 "active_page_idx": max(0, min(self.current_page_idx, len(valid_pages) - 1)),
                 "pages": valid_pages
             }
@@ -1724,6 +1787,14 @@ class MainWindow(QMainWindow):
                     self.list_pages.setCurrentRow(target_idx)
                 self._update_learn_button_status()
                 self._update_page_list_items()
+                try:
+                    from ui.update_dialog import get_current_app_version
+                    cur_ver = get_current_app_version()
+                    old_ver = data.get("app_version", "")
+                    if cur_ver and old_ver != cur_ver:
+                        self.lbl_status.setText(t("session_upgrade_hint", old_ver=old_ver or "earlier", new_ver=cur_ver))
+                except Exception:
+                    pass
             else:
                 if os.path.exists(SESSION_PATH):
                     os.remove(SESSION_PATH)

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-TorahNotesOCR - Offline Hebrew OCR Engine (v1.4.1)
+TorahNotesOCR - Offline Hebrew OCR Engine (v1.4.2)
 Wraps the Mishkefet-v1 CTC neural recognizer for Hebrew handwriting,
 providing:
 - 4-point perspective dewarping ("CamScanner" flatten) & dark-desk cropping
@@ -226,19 +226,21 @@ class OCREngine:
                                 M_inv = np.linalg.inv(M)
                                 warped = cv2.warpPerspective(arr, M, (max_w, max_h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
-                                # Trim 1.2% safety border inset so dark desk edges never bleed into OCR
+                                # Trim safety border inset so dark desk edges never bleed into OCR,
+                                # using a tiny top inset (0.3%) to preserve top-corner "בס\"ד" headers
                                 ix = max(4, int(max_w * 0.012))
-                                iy = max(4, int(max_h * 0.010))
-                                if max_w - 2 * ix > 100 and max_h - 2 * iy > 100:
-                                    warped = warped[iy : max_h - iy, ix : max_w - ix]
+                                iy_top = max(2, int(max_h * 0.003))
+                                iy_bot = max(4, int(max_h * 0.010))
+                                if max_w - 2 * ix > 100 and max_h - (iy_top + iy_bot) > 100:
+                                    warped = warped[iy_top : max_h - iy_bot, ix : max_w - ix]
                                 else:
-                                    ix, iy = 0, 0
+                                    ix, iy_top = 0, 0
 
                                 coord_info = {
                                     "mode": "perspective",
                                     "M_inv": M_inv,
                                     "inset_x": ix,
-                                    "inset_y": iy
+                                    "inset_y": iy_top
                                 }
                                 try:
                                     from core.logger import log
@@ -299,18 +301,22 @@ class OCREngine:
             gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
 
             # 1. Detect & fill dark circular binder holes in left 14% and right 14% strips
+            # Uses MORPH_OPEN with an elliptical kernel so thin pale-blue ruled lines never fuse with dark holes!
             margin_w = int(w * 0.14)
             page_area = float(h * w)
             min_hole_area = max(120.0, page_area * 0.00035)
             max_hole_area = page_area * 0.0075
 
             holes_removed = 0
+            open_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (13, 13))
+            close_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
             for x_off in (0, w - margin_w):
                 strip = gray[:, x_off : x_off + margin_w]
-                # Binder holes are much darker than the paper around them
-                dark_thresh = max(60, int(np.percentile(strip, 65)) - 65)
+                # Threshold below paper brightness; MORPH_OPEN((13,13)) wipes out thin ruled lines cleanly
+                dark_thresh = min(148, max(55, int(np.percentile(strip, 65)) - 70))
                 _, mask = cv2.threshold(strip, dark_thresh, 255, cv2.THRESH_BINARY_INV)
-                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
+                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_k)
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_k)
                 contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 for cnt in contours:
                     area = cv2.contourArea(cnt)
@@ -321,58 +327,126 @@ class OCREngine:
                         circ = (4.0 * np.pi * area / (peri * peri)) if peri > 0 else 0.0
                         fill_ratio = area / max(1.0, float(bw * bh))
                         if 0.55 <= aspect <= 1.85 and circ >= 0.42 and fill_ratio >= 0.52:
-                            # Expand slightly to erase the dark hole rim shadow too
                             cx = x_off + bx + bw // 2
                             cy = by + bh // 2
                             rad = int(max(bw, bh) * 0.68) + 6
-                            cv2.circle(rgb, (cx, cy), rad, tuple(int(c) for c in paper_rgb), -1)
+                            # Estimate local paper color from surrounding neighborhood so shadowed margins blend cleanly
+                            py1 = max(0, cy - rad - 24)
+                            py2 = min(h, cy + rad + 24)
+                            px1 = max(0, cx - rad - 24)
+                            px2 = min(w, cx + rad + 24)
+                            local_patch = rgb[py1:py2, px1:px2]
+                            local_gray = gray[py1:py2, px1:px2]
+                            bright_px = local_patch[local_gray > dark_thresh + 25]
+                            fill_rgb = (
+                                np.percentile(bright_px, 75, axis=0).astype(np.uint8)
+                                if len(bright_px) >= 40
+                                else paper_rgb
+                            )
+                            cv2.circle(rgb, (cx, cy), rad, tuple(int(c) for c in fill_rgb), -1)
                             holes_removed += 1
 
-            # 2. Detect & surgically remove vertical red/pink looseleaf margin line
+            # Recompute float channels after hole filling
             r_f = rgb[:, :, 0].astype(np.float32)
             g_f = rgb[:, :, 1].astype(np.float32)
             b_f = rgb[:, :, 2].astype(np.float32)
             redness = r_f - 0.5 * (g_f + b_f)
+
+            # 2. Detect & surgically remove vertical red/pink looseleaf margin line
+            # Tracks slight page tilt across vertical bands and adapts to shaded paper!
             col_red = redness.mean(axis=0)
             med_red = float(np.median(col_red))
 
             left_lim = int(w * 0.25)
             cand_x = int(np.argmax(col_red[:left_lim]))
-            if float(col_red[cand_x]) > med_red + 7.5:
+            red_line_x_per_row = None
+            if float(col_red[cand_x]) > med_red + 6.5:
                 red_margin_x = cand_x
-                # Remove ONLY red/pink margin pixels in a narrow ±14px band around cand_x
-                # Dark blue/black handwriting ink crossing the red line has low R (< 120) or low redness, so it is preserved!
-                band_x1 = max(0, cand_x - 14)
-                band_x2 = min(w, cand_x + 15)
-                band_red = redness[:, band_x1:band_x2]
-                band_r = rgb[:, band_x1:band_x2, 0]
-                red_px_mask = (band_red > 14.0) & (band_r > 120)
-                if np.any(red_px_mask):
-                    # Dilate slightly horizontally (3px) to clean pink anti-aliasing halo
-                    red_u8 = (red_px_mask.astype(np.uint8) * 255)
-                    red_u8 = cv2.dilate(red_u8, np.ones((1, 3), np.uint8))
-                    # Re-protect dark ink pixels
-                    dark_ink = gray[:, band_x1:band_x2] < 118
-                    erase_mask = (red_u8 > 0) & (~dark_ink)
-                    rgb[:, band_x1:band_x2][erase_mask] = paper_rgb
+                # Fit a linear track x(y) across 6 vertical bands to follow slightly slanted red margin lines
+                band_pts_y = []
+                band_pts_x = []
+                n_bands = 6
+                band_h = max(1, h // n_bands)
+                search_x1 = max(0, cand_x - 45)
+                search_x2 = min(left_lim, cand_x + 46)
+                for b_idx in range(n_bands):
+                    by1 = b_idx * band_h
+                    by2 = h if b_idx == n_bands - 1 else (b_idx + 1) * band_h
+                    b_col = redness[by1:by2, search_x1:search_x2].mean(axis=0)
+                    if b_col.size > 0:
+                        rel_x = int(np.argmax(b_col))
+                        if float(b_col[rel_x]) > med_red + 5.5:
+                            band_pts_y.append(0.5 * (by1 + by2))
+                            band_pts_x.append(float(search_x1 + rel_x))
+
+                ys = np.arange(h, dtype=np.float32)
+                if len(band_pts_y) >= 2:
+                    slope, intercept = np.polyfit(band_pts_y, band_pts_x, 1)
+                    red_line_x_per_row = np.clip(slope * ys + intercept, 0, w - 1)
+                else:
+                    red_line_x_per_row = np.full(h, float(cand_x), dtype=np.float32)
+
+                # Erase red/pink margin pixels within ±16px of tracked x(y) using local paper fill
+                chunk_h = 64
+                for cy1 in range(0, h, chunk_h):
+                    cy2 = min(h, cy1 + chunk_h)
+                    cx_mid = int(round(float(np.mean(red_line_x_per_row[cy1:cy2]))))
+                    bx1 = max(0, cx_mid - 16)
+                    bx2 = min(w, cx_mid + 17)
+                    band_red = redness[cy1:cy2, bx1:bx2]
+                    band_r = r_f[cy1:cy2, bx1:bx2]
+                    band_g = g_f[cy1:cy2, bx1:bx2]
+                    band_b = b_f[cy1:cy2, bx1:bx2]
+                    red_px_mask = (band_red > 12.0) & ((band_r - band_b) > 10.0) & ((band_r - band_g) > 8.0)
+                    if np.any(red_px_mask):
+                        red_u8 = (red_px_mask.astype(np.uint8) * 255)
+                        red_u8 = cv2.dilate(red_u8, np.ones((1, 3), np.uint8))
+                        # Protect dark blue/black handwriting ink (which never has high redness),
+                        # while still erasing dark-red margin segments in shadows!
+                        dark_ink = (gray[cy1:cy2, bx1:bx2] < 115) & (band_red < 15.0)
+                        erase_mask = (red_u8 > 0) & (~dark_ink)
+                        if np.any(erase_mask):
+                            # Local paper color from clean pixels immediately adjacent to the red line
+                            sample_x1 = min(w - 1, bx2 + 4)
+                            sample_x2 = min(w, bx2 + 28)
+                            local_bg = rgb[cy1:cy2, sample_x1:sample_x2]
+                            local_fill = (
+                                np.percentile(local_bg.reshape(-1, 3), 75, axis=0).astype(np.uint8)
+                                if local_bg.size >= 30
+                                else paper_rgb
+                            )
+                            rgb[cy1:cy2, bx1:bx2][erase_mask] = local_fill
 
             # 3. Clean pale-blue ruled lines ONLY inside the empty left margin (strictly left of red_margin_x)
-            # so line boxes never stretch into the empty binder-hole margin, while preserving 100% of
-            # faint blue ballpoint pen & light pencil strokes inside the main writing area!
+            # using local vertical-chunk paper colors so shaded margins blend seamlessly without white stripes,
+            # while preserving 100% of faint blue ballpoint pen strokes inside the main writing area!
             if red_margin_x is not None and red_margin_x > 20:
                 blue_excess = b_f - r_f
-                left_slice = slice(0, max(0, red_margin_x - 2))
-                hsv_left = cv2.cvtColor(rgb[:, left_slice], cv2.COLOR_RGB2HSV)
-                hl, sl, vl = cv2.split(hsv_left)
-                left_blue = (
-                    (hl >= 85) & (hl <= 138) &
-                    (sl >= 14) & (sl <= 185) &
-                    (vl >= 120) &
-                    (blue_excess[:, left_slice] >= 6.0) &
-                    (gray[:, left_slice] >= 115)
-                )
-                if np.any(left_blue):
-                    rgb[:, left_slice][left_blue] = paper_rgb
+                chunk_h = 64
+                for cy1 in range(0, h, chunk_h):
+                    cy2 = min(h, cy1 + chunk_h)
+                    cx_lim = int(round(float(np.min(red_line_x_per_row[cy1:cy2])))) - 2 if red_line_x_per_row is not None else (red_margin_x - 2)
+                    if cx_lim <= 10:
+                        continue
+                    chunk_rgb = rgb[cy1:cy2, :cx_lim]
+                    chunk_gray = gray[cy1:cy2, :cx_lim]
+                    hsv_left = cv2.cvtColor(chunk_rgb, cv2.COLOR_RGB2HSV)
+                    hl, sl, vl = cv2.split(hsv_left)
+                    left_blue = (
+                        (hl >= 85) & (hl <= 138) &
+                        (sl >= 14) & (sl <= 185) &
+                        (vl >= 115) &
+                        (blue_excess[cy1:cy2, :cx_lim] >= 6.0) &
+                        (chunk_gray >= 110)
+                    )
+                    if np.any(left_blue):
+                        non_blue = chunk_rgb[(~left_blue) & (chunk_gray >= 115)]
+                        local_fill = (
+                            np.percentile(non_blue, 70, axis=0).astype(np.uint8)
+                            if len(non_blue) >= 40
+                            else paper_rgb
+                        )
+                        chunk_rgb[left_blue] = local_fill
 
             if holes_removed > 0 or red_margin_x is not None:
                 try:

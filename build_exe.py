@@ -133,23 +133,29 @@ def create_payload_zip(src_dir: str, out_zip: str):
 def create_delta_patch_zip(src_dir: str, out_zip: str):
     """
     Creates a lightweight code-only delta patch zip excluding heavy unchanging binary engines
-    (torch, PyQt6, cv2, fitz, model_assets, numpy, PIL).
-    Updates only OhrHaKsav.exe, version.json, assets, and base_library.zip (~25-50 MB instead of 468 MB!).
+    (torch, PyQt6, cv2, fitz, model_assets, numpy, PIL), unchanging runtime metadata, and the
+    duplicate version-labeled EXE alias (which the updater recreates locally in 0.05s).
+    Updates only OhrHaKsav.exe, version.json, assets, and base_library.zip (~49 MB instead of 468 MB!).
     """
     print(f"\nPackaging lightweight code-only delta patch to {out_zip}...")
     t0 = time.time()
     skip_dirs = {
         "torch", "PyQt6", "cv2", "fitz", "pymupdf", "model_assets",
-        "numpy", "PIL", "scipy", "sklearn", "sympy", "llvmlite"
+        "numpy", "PIL", "scipy", "sklearn", "sympy", "llvmlite",
+        "_tcl_data", "_tk_data", "tcl8", "tk8", "tzdata", "dateutil", "certifi"
     }
     with zipfile.ZipFile(out_zip, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for root, dirs, files in os.walk(src_dir):
-            # Prune heavy engine directories inside _internal
-            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            # Prune heavy engine & unchanging metadata directories inside _internal
+            dirs[:] = [d for d in dirs if d not in skip_dirs and not d.endswith(".dist-info")]
             rel_root = os.path.relpath(root, src_dir)
             for f in files:
+                fl = f.lower()
+                # Skip duplicate versioned EXE alias (OhrHaKsav_vX.Y.Z.exe); updater clones OhrHaKsav.exe locally
+                if rel_root == "." and fl.startswith("ohrhaksav_v") and fl.endswith(".exe"):
+                    continue
                 # Skip large binary DLLs inside _internal (unchanging runtime libraries)
-                if rel_root != "." and f.lower().endswith((".dll", ".pyd", ".so")):
+                if rel_root != "." and fl.endswith((".dll", ".pyd", ".so")):
                     continue
                 full_path = os.path.join(root, f)
                 rel_path = os.path.relpath(full_path, src_dir)
