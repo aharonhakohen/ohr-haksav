@@ -147,6 +147,48 @@ def test_sha256_and_strict_offline():
             os.environ["OHR_HAKSAV_OFFLINE_ONLY"] = prev
 
 
+def test_single_pass_and_cursive_fixes():
+    """Verify single-pass apply_corrections prevents תוס'' double-apostrophe and resolves cursive typos safely."""
+    le = LearningEngine()
+    sample = "קוס כתב לבאורה ביון הבלי בלי דבר ברור דברורות בופר"
+    out, applied = le.apply_corrections(sample)
+    assert "תוס''" not in out, f"Double apostrophe bug recurred: {out}"
+    assert "תוס'" in out
+    assert "לכאורה" in out
+    assert "כיון" in out
+    assert "הכלי" in out
+    assert "דצרורות" in out
+    assert "כופר" in out
+    # Valid Hebrew words must remain completely untouched
+    assert " בלי " in out and " דבר " in out and " ברור " in out
+
+
+def test_looseleaf_cleaner_and_inverse_box_map():
+    """Verify binder holes & red margin line are erased and perspective boxes map back to original space."""
+    engine = OCREngine()
+    # Create synthetic looseleaf page with 3 binder holes and a red vertical margin line at x=80
+    arr = np.full((800, 600, 3), 235, dtype=np.uint8)
+    cv2.circle(arr, (35, 140), 18, (25, 25, 25), -1)
+    cv2.circle(arr, (35, 400), 18, (25, 25, 25), -1)
+    cv2.circle(arr, (35, 660), 18, (25, 25, 25), -1)
+    arr[:, 80:84] = [215, 110, 120]  # Red margin line
+    cleaned, red_x = engine.clean_looseleaf_artifacts(Image.fromarray(arr))
+    c_arr = np.array(cleaned)
+    assert red_x is not None and abs(red_x - 81) <= 5
+    # Verify middle binder hole was filled to bright paper color
+    assert float(c_arr[400, 35].mean()) > 200.0, "Binder hole was not erased!"
+
+    # Verify inverse box mapping on tilted desk image
+    desk = np.full((600, 600, 3), 25, dtype=np.uint8)
+    quad = np.array([[100, 80], [500, 100], [520, 520], [80, 500]], dtype=np.int32)
+    cv2.fillConvexPoly(desk, quad, (240, 240, 240))
+    warped, coord_info = engine.crop_document_if_desk_with_map(Image.fromarray(desk))
+    assert coord_info["mode"] == "perspective"
+    from core.ocr_engine import _map_box_to_original
+    mapped = _map_box_to_original({"x": 50, "y": 50, "w": 200, "h": 40}, coord_info, 600, 600)
+    assert mapped["x"] >= 100 and mapped["y"] >= 100, f"Box not mapped back into desk coords: {mapped}"
+
+
 if __name__ == "__main__":
     test_i18n_key_parity()
     test_version_consistency()
@@ -157,4 +199,6 @@ if __name__ == "__main__":
     test_perspective_dewarp_crop()
     test_docx_layouts_export()
     test_sha256_and_strict_offline()
-    print("All v1.4.0 unit tests in test_suite.py passed successfully!")
+    test_single_pass_and_cursive_fixes()
+    test_looseleaf_cleaner_and_inverse_box_map()
+    print("All v1.4.1 unit tests in test_suite.py passed successfully!")

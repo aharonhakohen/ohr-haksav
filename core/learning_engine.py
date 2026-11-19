@@ -22,6 +22,11 @@ from typing import List, Tuple, Dict, Any, Optional
 DEFAULT_CORRECTIONS = [
     # Common OCR misreadings of Yeshiva / Torah handwriting
     ("בסייד", "בס\"ד"),
+    ("בסיידן", "בס\"ד"),
+    ("בסיירן", "בס\"ד"),
+    ("ובסיידן", "בס\"ד"),
+    ("כן בסיבן", "בס\"ד"),
+    ("בסדו", "בס\"ד"),
     ("בסיד", "בס\"ד"),
     ("בסד", "בס\"ד"),
     ("שיעורא", "שיעור א'"),
@@ -42,6 +47,8 @@ DEFAULT_CORRECTIONS = [
     ("רשלי", "רש\"י"),
     ("רמבם", "רמב\"ם"),
     ("ראבד", "ראב\"ד"),
+    ("הראבד", "הראב\"ד"),
+    ("הנמוקי", "הנימוק\"י"),
     ("ריף", "רי\"ף"),
     ("ראס", "רא\"ש"),
     ("ראש", "רא\"ש"),
@@ -54,6 +61,7 @@ DEFAULT_CORRECTIONS = [
     ("נפקמ", "נפק\"מ"),
     ("קמל", "קמ\"ל"),
     ("סדא", "סד\"א"),
+    ("לפיז", "לפי\"ז"),
     ("ברהר", "ברה\"ר"),
     ("ברחר", "ברה\"ר"),
     ("ברהי", "ברה\"י"),
@@ -88,6 +96,125 @@ DEFAULT_CORRECTIONS = [
     ("הנציב", "הנצי\"ב"),
     ("הנצי\"ב", "הנצי\"ב"),
 ]
+
+# Unambiguous cursive OCR typos that are NOT valid Hebrew/Aramaic words
+BUILTIN_CURSIVE_FIXES = {
+    "בסיידן": "בס\"ד",
+    "בסיירן": "בס\"ד",
+    "ובסיידן": "בס\"ד",
+    "בסדו": "בס\"ד",
+    "ביון": "כיון",
+    "ביין": "כיון",
+    "לבאורה": "לכאורה",
+    "לכוורה": "לכאורה",
+    "לבוורה": "לכאורה",
+    "לבאורהן": "לכאורה",
+    "בבלל": "בכלל",
+    "נבלל": "נכלל",
+    "הבלי": "הכלי",
+    "הכלין": "הכלי",
+    "הילובה": "הילוכה",
+    "בהילבותיהן": "בהילכותיהן",
+    "מהלבה": "מהלכה",
+    "בתב": "כתב",
+    "ובתב": "וכתב",
+    "דבתב": "דכתב",
+    "בשבתב": "כשכתב",
+    "ובשבתב": "וכשכתב",
+    "בקב": "כתב",
+    "פקב": "כתב",
+    "בריך": "צריך",
+    "צריד": "צריך",
+    "המוביא": "המוציא",
+    "קולדה": "תולדה",
+    "מקחת": "מתחת",
+    "להקחייב": "להתחייב",
+    "הקחייב": "התחייב",
+    "נתבונה": "נתכוונה",
+    "נתביונה": "נתכוונה",
+    "אודחיה": "אורחיה",
+    "לפיז": "לפי\"ז",
+    "הראבד": "הראב\"ד",
+    "הנמוקי": "הנימוק\"י",
+    "משלת": "משלם",
+    "האשון": "הראשון",
+    "הצרודות": "הצרורות",
+    "דרורות": "צרורות",
+    "הברורות": "הצרורות",
+    "בברורות": "בצרורות",
+    "שברורות": "שצרורות",
+    "דברורות": "דצרורות",
+    "בופר": "כופר",
+    "מבופר": "מכופר",
+    "וביון": "וכיון",
+    "החיבוש": "החידוש",
+    "החודוש": "החידוש",
+    "שחידיש": "שחידוש",
+    "שהחידיש": "שהחידוש",
+    "המניק": "המזיק",
+    "מניק": "מזיק",
+    "מגיק": "מזיק",
+    "להגיק": "להזיק",
+    "להזוק": "להזיק",
+    "שאונו": "שאינו",
+    "אונו": "אינו",
+    "ןממילא": "וממילא",
+    "דסדאן": "דסד\"א",
+    "לברשם": "לפרשת",
+    "חמשי": "חמישי",
+    "נמימשלת": "נמי משלם",
+    "בתבתוס": "כתב תוס'",
+    "מהבחמה": "מהבהמה",
+    "במזוק": "במזיק",
+}
+
+# Curated Yeshiva / Talmudic target words for single-character cursive-swap resolution
+TORAH_CURSIVE_TARGETS = {
+    "לכאורה", "הילוכה", "מהלכה", "בכלל", "נכלל", "הכלי", "כיון", "כיוון",
+    "כתב", "וכתב", "שכתב", "דכתב", "כשכתב", "צריך", "וצריך", "המוציא",
+    "תולדה", "מתחת", "להתחייב", "התחייב", "נתכוונה", "אורחיה", "החידוש",
+    "המזיק", "להזיק", "הראשון", "משלם", "צרורות", "הצרורות", "בצרורות",
+    "משונה", "במשונה", "דמשונה", "כדרכה", "הבהמה", "לבהמה", "מהבהמה",
+    "מסתמא", "אליבא", "הלכתא", "ברייתא", "המשנה", "ראשונים", "אחרונים",
+    "הגמרא", "חלוקות", "מעשות", "בגופו", "כגופו", "מחובר", "תלוש",
+    "ברגליו", "הילכותיהן", "בהילכותיהן", "לפרשת", "חמישי", "מרחשון",
+    "מחבירו", "הראיה", "הנושא", "באופן", "ממילא", "וממילא", "ובאמת",
+    "לגמרי", "מחמת", "שאינו", "מכלל", "דכתיב", "איפכא", "הנצי\"ב",
+    "לשיטת", "כשיטת", "בשיטת", "דעתו", "לדעת", "בדעת", "פירוש",
+    "לפירוש", "קושיא", "תירוץ", "חילוק", "סברא", "הסברא", "בסברא",
+    "מחלוקת", "במחלוקת", "תוספות", "בתוספות", "התוספות", "שבתוספות",
+}
+
+# Common valid Hebrew words that must NEVER be altered by cursive-swap heuristics
+SAFE_COMMON_HEBREW = {
+    "ברור", "בנו", "דבר", "דברי", "דברים", "ברך", "בדרך", "דרך", "מלך",
+    "כבוד", "במקום", "מקום", "בקר", "בדין", "הדין", "דין", "כדי", "כאן",
+    "באמת", "בזה", "בלי", "כלים", "כלי", "רגל", "דגל", "שבר", "ושבר",
+    "שברתו", "ושברתו", "נפל", "ונפל", "הוא", "היא", "האם", "אבל", "אלא",
+    "אמר", "לומר", "אומר", "אפשר", "עדיין", "קשה", "אמאי", "פשוט", "בפשוט",
+    "ספק", "בספק", "חייב", "פטור", "מועד", "מועדת", "קרן", "נזק", "שלם",
+    "חצי", "גוף", "כוחו", "ממש", "אחר", "אחד", "שני", "שניהם", "כולם",
+    "ביחד", "לבד", "לגבי", "בעצם", "עצם", "מעשה", "לעשות", "עשה", "עושה",
+    "יכול", "אינו", "אינה", "אינן", "אינם", "אין", "יש", "היה", "היתה",
+    "יהיה", "להיות", "מותר", "אסור", "כשר", "פסול", "טמא", "טהור",
+    "ממון", "גזל", "גניבה", "שומר", "שומרים", "בעלים", "הבעלים", "נכסים",
+    "בית", "חצר", "שדה", "עיר", "עולם", "אדם", "איש", "אשה", "בן", "בת",
+    "אב", "אם", "אח", "אחות", "יום", "לילה", "שבת", "חול", "שנה", "חודש",
+    "תורה", "מצוה", "מצות", "עבירה", "הלכה", "משפט", "צדק", "אמת", "שקר",
+    "גדול", "קטן", "טוב", "רע", "חדש", "ישן", "רב", "מעט", "הרבה", "קצת",
+    "כמו", "כגון", "היינו", "דהיינו", "מכל", "בכל", "לכל", "שכל", "הכל",
+    "אף", "גם", "רק", "עוד", "שוב", "כבר", "עתה", "כעת", "אז", "שם",
+    "פה", "הכא", "התם", "הכי", "לאו", "נמי", "תו", "הא", "מאי", "דא",
+    "בהמה", "חיה", "עוף", "עופות", "צבי", "איל", "חמור", "שור", "בור",
+    "מבעה", "הבער", "אש", "מים", "עץ", "אבן", "כלב", "גדי", "עגלה",
+} | TORAH_CURSIVE_TARGETS
+
+CURSIVE_CHAR_SWAPS = {
+    "ב": ("כ", "צ"),
+    "ק": ("ת",),
+    "ד": ("ר",),
+    "נ": ("ז",),
+}
 
 DEFAULT_VOCABULARY = [
     "בבא", "קמא", "מציעא", "בתרא", "כיצד", "הרגל", "מועדת", "להלך", "כדרכה",
@@ -803,33 +930,97 @@ class LearningEngine:
         pairs = self.extract_corrections(raw_text, corrected_text)
         return self.commit_corrections(pairs, page_name=page_name, raw_text=raw_text, corrected_text=corrected_text)
 
+    def _resolve_cursive_swap(self, word: str, known_targets: set) -> Optional[str]:
+        """
+        If `word` (Hebrew, len >= 4) is NOT in SAFE_COMMON_HEBREW / known_targets,
+        checks whether swapping 1 cursive-confusable character (e.g. ב->כ, ק->ת, ב->צ, ד->ר)
+        produces a unique exact match in `known_targets`.
+        """
+        if len(word) < 4 or word in SAFE_COMMON_HEBREW or word in known_targets:
+            return None
+
+        # 1. Check stripping a phantom trailing 'ן' glued from a vertical red margin line
+        if word.endswith("ן") and len(word) >= 5:
+            stem = word[:-1]
+            if stem in known_targets or stem in SAFE_COMMON_HEBREW:
+                return stem
+            if stem in BUILTIN_CURSIVE_FIXES:
+                return BUILTIN_CURSIVE_FIXES[stem]
+
+        # 2. Check single-character cursive confusions
+        matches = set()
+        for idx, ch in enumerate(word):
+            swaps = CURSIVE_CHAR_SWAPS.get(ch)
+            if not swaps:
+                continue
+            for alt in swaps:
+                cand = word[:idx] + alt + word[idx + 1:]
+                if cand in known_targets:
+                    matches.add(cand)
+        if len(matches) == 1:
+            return next(iter(matches))
+        return None
+
     def apply_corrections(self, text: str) -> Tuple[str, List[Tuple[str, str]]]:
         """
-        Applies active learned corrections to the raw OCR text.
-        Supports multi-person profile stacking: aggregates rules from all enabled profiles!
+        Applies active learned corrections to the raw OCR text in a SINGLE PASS
+        (preventing double-replacement bugs like תוס' -> תוס''), followed by
+        smart cursive-confusion resolution against the Torah/Yeshiva lexicon.
+        Supports multi-person profile stacking across all enabled profiles.
         Returns (processed_text, applied_rules_list).
         """
         if not text:
             return "", []
 
-        # Load active rules from all enabled profiles
+        # Build unified lookup map: builtin cursive fixes first, then user profile rules override!
+        rule_map: Dict[str, str] = dict(BUILTIN_CURSIVE_FIXES)
         replacements = self.get_all_replacements(active_only=True, include_all_enabled=True)
-        # Sort by length descending so longer phrases match before substrings
-        replacements.sort(key=lambda r: len(r["raw_text"]), reverse=True)
-
-        applied = []
-        result = text
-
         for rule in replacements:
             raw = rule["raw_text"]
             corr = rule["corrected_text"]
+            if raw and corr and raw != corr:
+                rule_map[raw] = corr
 
-            pattern = re.escape(raw)
-            # Match whole word boundaries in Hebrew
-            boundary_pattern = r'(?<![\u0590-\u05FF0-9])' + pattern + r'(?![\u0590-\u05FF0-9])'
+        applied: List[Tuple[str, str]] = []
+        result = text
 
-            if re.search(boundary_pattern, result):
-                result = re.sub(boundary_pattern, corr, result)
-                applied.append((raw, corr))
+        # Step 1: Single-pass longest-first regex replacement (no cascading double-apostrophe!)
+        if rule_map:
+            sorted_keys = sorted(rule_map.keys(), key=len, reverse=True)
+            alt_pattern = "|".join(re.escape(k) for k in sorted_keys)
+            # Include Hebrew letters, digits, geresh (') and gershayim (") in word boundaries
+            boundary_pattern = re.compile(
+                r'(?<![\u0590-\u05FF0-9\'"])(?:' + alt_pattern + r')(?![\u0590-\u05FF0-9\'"])'
+            )
+
+            def _repl_cb(m):
+                matched = m.group(0)
+                target = rule_map[matched]
+                applied.append((matched, target))
+                return target
+
+            result = boundary_pattern.sub(_repl_cb, result)
+
+        # Step 2: Smart Cursive-Confusion Resolution for remaining unknown words (len >= 4)
+        known_targets = set(TORAH_CURSIVE_TARGETS)
+        try:
+            with self._get_connection() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT word FROM vocabulary WHERE frequency >= 2")
+                for (w,) in cur.fetchall():
+                    if w and len(w) >= 4:
+                        known_targets.add(w)
+        except Exception:
+            pass
+
+        def _cursive_cb(m):
+            tok = m.group(0)
+            fixed = self._resolve_cursive_swap(tok, known_targets)
+            if fixed and fixed != tok:
+                applied.append((tok, fixed))
+                return fixed
+            return tok
+
+        result = re.sub(r'(?<![\u0590-\u05FF\'"])[\u0590-\u05FF]{4,}(?![\u0590-\u05FF\'"])', _cursive_cb, result)
 
         return result, applied

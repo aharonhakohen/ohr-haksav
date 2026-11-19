@@ -55,15 +55,16 @@ def get_resource_path(rel_path: str) -> str:
 
 class OCRWorker(QThread):
     progress = pyqtSignal(int, int, str)
-    finished = pyqtSignal(dict)
-    error = pyqtSignal(str)
+    finished = pyqtSignal(int, dict)  # (target_page_idx, result_dict)
+    error = pyqtSignal(int, str)      # (target_page_idx, error_msg)
 
-    def __init__(self, ocr_engine: OCREngine, learning_engine: LearningEngine, image_path: str, rotation: int = 0):
+    def __init__(self, ocr_engine: OCREngine, learning_engine: LearningEngine, image_path: str, rotation: int = 0, page_idx: int = 0):
         super().__init__()
         self.ocr_engine = ocr_engine
         self.learning_engine = learning_engine
         self.image_path = image_path
         self.rotation = rotation
+        self.page_idx = page_idx
 
     def run(self):
         try:
@@ -80,15 +81,16 @@ class OCRWorker(QThread):
             corrected_text, applied_rules = self.learning_engine.apply_corrections(raw_result["full_text"])
 
             final_result = {
+                "source_path": self.image_path,
                 "raw_text": raw_result["full_text"],
                 "text": corrected_text,
                 "lines": raw_result["lines"],
                 "corrections_applied": len(applied_rules),
                 "rules_details": applied_rules
             }
-            self.finished.emit(final_result)
+            self.finished.emit(self.page_idx, final_result)
         except Exception as e:
-            self.error.emit(str(e))
+            self.error.emit(self.page_idx, str(e))
 
 
 class ModelPreWarmWorker(QThread):
@@ -1034,19 +1036,28 @@ class MainWindow(QMainWindow):
         if self.current_page_idx < 0 or self.current_page_idx >= len(self.pages):
             QMessageBox.information(self, "Notice", "Please attach and select an image to scan first.")
             return
+        self.scan_page(self.current_page_idx)
 
-        pdata = self.pages[self.current_page_idx]
+    def scan_page(self, target_idx: int):
+        """Scans a specific page index in background without overwriting or yanking other pages."""
+        if target_idx < 0 or target_idx >= len(self.pages):
+            return
+
+        pdata = self.pages[target_idx]
+        pdata["status"] = t("page_status_processing")
+        self._update_page_list_items()
+
         self.btn_scan.setEnabled(False)
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
-        self.lbl_status.setText(f"Scanning page {self.current_page_idx + 1} ({pdata['filename']})...")
-        log.info(f"Scanning page {self.current_page_idx + 1}/{len(self.pages)}: {pdata['filename']} (rotation={pdata['rotation']})")
+        self.lbl_status.setText(f"Scanning page {target_idx + 1} of {len(self.pages)} ({pdata['filename']})...")
+        log.info(f"Scanning page {target_idx + 1}/{len(self.pages)}: {pdata['filename']} (rotation={pdata['rotation']})")
 
         self.active_worker = OCRWorker(
-            self.ocr_engine, self.learning_engine, pdata["path"], pdata["rotation"]
+            self.ocr_engine, self.learning_engine, pdata["path"], pdata["rotation"], page_idx=target_idx
         )
         self.active_worker.progress.connect(self._on_ocr_progress)
-        self.active_worker.finished.connect(lambda res: self._on_ocr_finished(self.current_page_idx, res))
+        self.active_worker.finished.connect(self._on_ocr_finished)
         self.active_worker.error.connect(self._on_ocr_error)
         self.active_worker.start()
 
@@ -1059,19 +1070,26 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.btn_scan.setEnabled(True)
 
-        if 0 <= page_idx < len(self.pages):
-            p = self.pages[page_idx]
+        # Resolve exact page safely (even if user clicked another page or reordered thumbnails mid-scan!)
+        src_path = res.get("source_path", "")
+        resolved_idx = -1
+        if 0 <= page_idx < len(self.pages) and (not src_path or self.pages[page_idx].get("path") == src_path):
+            resolved_idx = page_idx
+        elif src_path:
+            for idx, pg in enumerate(self.pages):
+                if pg.get("path") == src_path:
+                    resolved_idx = idx
+                    break
+
+        if 0 <= resolved_idx < len(self.pages):
+            p = self.pages[resolved_idx]
             p["raw_text"] = res["raw_text"]
             p["edited_text"] = res["text"]
             p["last_learned_text"] = res["text"]
             p["status"] = t("page_status_scanned")
             p["lines_boxes"] = res["lines"]
 
-            item = self.list_pages.item(page_idx)
-            if item:
-                item.setText(f"{p['filename']}\n{t('page_status_scanned')}")
-
-            if page_idx == self.current_page_idx:
+            if resolved_idx == self.current_page_idx:
                 confs = [ln.get("confidence", 1.0) for ln in res.get("lines", []) if isinstance(ln, dict)]
                 self.editor.set_text(res["text"], res["raw_text"], confidences=confs)
                 self.viewer.set_bounding_boxes(res.get("lines", []))
@@ -1081,19 +1099,22 @@ class MainWindow(QMainWindow):
             self._update_learn_button_status()
             self._update_page_list_items()
             self.save_session_state()
-            self.lbl_status.setText(f"Page {page_idx + 1} scanned successfully ({len(res['lines'])} lines, applied {res['corrections_applied']} learned rules)!")
-            log.info(f"Page {page_idx + 1} scanned successfully: {len(res['lines'])} lines, {res['corrections_applied']} corrections.")
+            self.lbl_status.setText(f"Page {resolved_idx + 1} scanned successfully ({len(res['lines'])} lines, applied {res['corrections_applied']} learned rules)!")
+            log.info(f"Page {resolved_idx + 1} scanned successfully: {len(res['lines'])} lines, {res['corrections_applied']} corrections.")
 
-        # If batch scanning is active, advance to next unscanned page!
+        # If batch scanning is active, advance to next unscanned page in background!
         if getattr(self, "_batch_scanning", False):
-            QTimer.singleShot(200, self._scan_next_batch_page)
+            QTimer.singleShot(150, self._scan_next_batch_page)
 
-    def _on_ocr_error(self, err_msg: str):
+    def _on_ocr_error(self, page_idx: int, err_msg: str):
         self._batch_scanning = False
         self.progress_bar.setVisible(False)
         self.btn_scan.setEnabled(True)
-        log.error(f"OCR Error: {err_msg}")
-        QMessageBox.critical(self, "OCR Error", f"An error occurred during OCR recognition:\n{err_msg}")
+        if 0 <= page_idx < len(self.pages):
+            self.pages[page_idx]["status"] = t("page_status_error")
+            self._update_page_list_items()
+        log.error(f"OCR Error on page {page_idx + 1}: {err_msg}")
+        QMessageBox.critical(self, "OCR Error", f"An error occurred during OCR recognition on Page {page_idx + 1}:\n{err_msg}")
         self.lbl_status.setText("Scan failed.")
 
     def scan_all_pages(self):
@@ -1106,8 +1127,11 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Complete", "All pages in notebook have already been scanned!")
             return
 
+        if self.current_page_idx < 0 and self.pages:
+            self.list_pages.setCurrentRow(0)
+
         self._batch_scanning = True
-        log.info(f"Initiated 'Scan All Pages' batch mode for {len(unscanned)} unscanned page(s)...")
+        log.info(f"Initiated 'Scan All Pages' background batch mode for {len(unscanned)} unscanned page(s)...")
         self._scan_next_batch_page()
 
     def _scan_next_batch_page(self):
@@ -1115,9 +1139,9 @@ class MainWindow(QMainWindow):
             return
 
         for i, p in enumerate(self.pages):
-            if p["status"] != t("page_status_scanned"):
-                self.list_pages.setCurrentRow(i)
-                self.scan_current_page()
+            if p["status"] != t("page_status_scanned") and p["status"] != t("page_status_processing"):
+                # Scan page i directly in background WITHOUT hijacking the user's currently viewed page!
+                self.scan_page(i)
                 return
 
         # Loop completed: all pages have been scanned!
@@ -1595,12 +1619,17 @@ class MainWindow(QMainWindow):
             log.debug(f"Pre-warm launch note: {e}")
 
     def _update_page_list_items(self):
-        """Updates sidebar page list items with visual status badges (⚪ Ready / 🟠 Pending / 🟢 Synced)."""
+        """Updates sidebar page list items with visual status badges (⚪ Ready / ⏳ Scanning / 🟠 Pending / 🟢 Synced)."""
         for idx, p in enumerate(self.pages):
+            cur_status = p.get("status", "")
             raw = p.get("raw_text", "").strip()
             edited = p.get("edited_text", "").strip()
             last_learned = p.get("last_learned_text", raw).strip()
-            if not raw:
+            if cur_status == t("page_status_processing"):
+                status_text = "⏳ " + t("page_status_processing")
+            elif cur_status == t("page_status_error"):
+                status_text = "❌ " + t("page_status_error")
+            elif not raw:
                 status_text = "⚪ " + t("page_status_ready")
             elif edited != last_learned:
                 status_text = "🟠 " + t("page_status_pending")
