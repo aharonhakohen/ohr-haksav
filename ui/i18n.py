@@ -70,6 +70,7 @@ STRINGS = {
         "menu_help_guide": "User Guide & Tutorial... (F1)",
         "menu_help_about": "About Ohr HaKsav...",
         "menu_help_check_updates": "Check for Updates... (Ctrl+U)",
+        "menu_help_repair_start_menu": "Add / Repair Windows Start Menu Shortcut...",
         "btn_help_tooltip": "User Guide & Tutorial (F1)",
 
         # Help & Tutorial Dialog
@@ -122,7 +123,7 @@ STRINGS = {
         "update_source_web": "Official GitHub Cloud (Online)",
         "update_source_web_desc": "Checks GitHub for the latest official public releases (requires internet connection).",
         "update_source_local": "Local Network Share / Folder / USB (Offline & Domain)",
-        "update_source_local_desc": "Checks a local folder or UNC server share (e.g. \\\\newltcserver\\share or M:\\...) containing version.json and OhrHaKsav_Setup.exe.",
+        "update_source_local_desc": "Checks a local folder or UNC server share (e.g. \\\\fileserver\\share or D:\\Updates\\...) containing version.json and OhrHaKsav_Setup.exe.",
         "update_folder_path_lbl": "Network / Local Staging Folder Path:",
         "update_folder_browse_btn": "Browse...",
         "update_auto_check": "Automatically check for updates on startup",
@@ -343,6 +344,7 @@ STRINGS = {
         "menu_help_guide": "מדריך למשתמש, הדרכה ואימון... (F1)",
         "menu_help_about": "אודות אור הכתב...",
         "menu_help_check_updates": "בדוק עדכונים... (Ctrl+U)",
+        "menu_help_repair_start_menu": "הוסף / תקן קיצור דרך בתפריט ההתחלה של Windows...",
         "btn_help_tooltip": "מדריך למשתמש והדרכה (F1)",
 
         # Help & Tutorial Dialog
@@ -395,7 +397,7 @@ STRINGS = {
         "update_source_web": "ענן GitHub הרשמי (אונליין)",
         "update_source_web_desc": "בודק ב-GitHub עדכונים רשמיים חדשים (דורש חיבור אינטרנט).",
         "update_source_local": "שיתוף רשת מקומי / שרת / USB (אופליין ודומיין)",
-        "update_source_local_desc": "בודק תיקייה מקומית או שיתוף שרת UNC (כגון \\\\newltcserver\\share או M:\\...) המכיל version.json ואת קובץ ההתקנה.",
+        "update_source_local_desc": "בודק תיקייה מקומית או שיתוף שרת UNC (כגון \\\\fileserver\\share או D:\\Updates\\...) המכיל version.json ואת קובץ ההתקנה.",
         "update_folder_path_lbl": "נתיב תיקיית רשת או שיתוף שרת:",
         "update_folder_browse_btn": "עיון...",
         "update_auto_check": "בדוק עדכונים אוטומטית בהפעלת התוכנה",

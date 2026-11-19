@@ -49,8 +49,8 @@ Ohr HaKsav features a **continuous self-learning memory engine**: as you correct
    - One-click timestamped profile backups (`.ohrhaksav`), safe restores with automatic pre-backup snapshots, rule merging, and JSON export/import.
 
 7. **Domain-Aware Setup Wizard & Enterprise Offline Update Checker**
-   - Multi-path shortcut creation detects active redirected desktop folders (`\\newltcserver\userdata$\...`) on Windows Server domain environments.
-   - Built-in update manager under `Help > Check for Updates...` checks both official GitHub releases and offline local network shares (`\\newltcserver\Installs\OhrHaKsav` or Google Drive).
+   - Multi-path shortcut creation detects active redirected desktop folders (`\\fileserver\userdata$\...`) on Windows Server domain environments.
+   - Built-in update manager under `Help > Check for Updates...` checks both official GitHub releases and offline local network shares (`\\fileserver\Installs\OhrHaKsav` or shared cloud drives).
 
 ---
 

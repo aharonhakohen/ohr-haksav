@@ -4,7 +4,7 @@ Ohr HaKsav - Modern Update Checker & Source Configuration Dialog
 Supports checking for updates via:
   1. Official GitHub Cloud (https://raw.githubusercontent.com/.../version.json)
   2. Local Network Share / Windows Server Domain Share / USB / Offline folder
-     (e.g. \\newltcserver\Installs\OhrHaKsav or M:\My Drive\... containing version.json & OhrHaKsav_Setup.exe)
+     (e.g. \\fileserver\Installs\OhrHaKsav or D:\Updates\... containing version.json & OhrHaKsav_Setup.exe)
 Includes:
   - Fast, reliable Internet connectivity pre-check (DNS socket / HTTP connecttest)
   - Silent background startup update checking
@@ -111,9 +111,9 @@ def get_current_app_version() -> str:
     vpath = get_resource_path("version.json")
     try:
         with open(vpath, "r", encoding="utf-8") as f:
-            return json.load(f).get("version", "1.4.2")
+            return json.load(f).get("version", "1.4.3")
     except Exception:
-        return "1.4.2"
+        return "1.4.3"
 
 
 CURRENT_VERSION = get_current_app_version()
@@ -769,7 +769,7 @@ class UpdateDialog(QDialog):
         folder_box = QHBoxLayout()
         folder_box.setContentsMargins(22, 0, 0, 0)
         self.txt_local_path = QLineEdit(self.source_local_path)
-        self.txt_local_path.setPlaceholderText(r"\newltcserver\Installs\OhrHaKsav or M:\My Drive\...")
+        self.txt_local_path.setPlaceholderText(r"\\fileserver\Installs\OhrHaKsav or D:\Updates\...")
         folder_box.addWidget(self.txt_local_path)
 
         btn_browse = QPushButton(t("update_folder_browse_btn"))
