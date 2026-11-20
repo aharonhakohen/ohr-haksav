@@ -141,17 +141,27 @@ def estimate_line_pitch(binary: np.ndarray) -> float:
     strongly periodic vertically, so the first real peak of the projection
     profile's autocorrelation is the line pitch.
     """
-    profile = binary.sum(axis=1, dtype=np.float64)
+    full_profile = binary.sum(axis=1, dtype=np.float64)
+    h = len(full_profile)
+    # A realistic handwritten page has between 12 and 80 lines (including compact notes on half-filled pages).
+    # Prevent pitch from dropping into microscopic stroke/ruled-line noise (e.g. 8px on a 2000px image).
+    lo = max(16, int(h / 85))
+    hi = min(h - 1, int(h / 12))
+
+    # Restrict autocorrelation to the active ink vertical span when possible so large blank
+    # top/bottom margins do not create a strong low-frequency ramp that masks the true peak.
+    ink_rows = np.where(full_profile > 0)[0]
+    if len(ink_rows) >= 2 and (ink_rows[-1] - ink_rows[0] + 1) > lo + 4:
+        profile = full_profile[ink_rows[0] : ink_rows[-1] + 1]
+    else:
+        profile = full_profile
+
     profile = profile - profile.mean()
     if not np.any(profile):
         return 30.0
 
     corr = np.correlate(profile, profile, mode="full")[len(profile) - 1 :]
-    h = len(profile)
-    # A realistic handwritten page has between 12 and 55 lines.
-    # Prevent pitch from dropping into microscopic stroke/ruled-line noise (e.g. 8px on a 2000px image).
-    lo = max(18, int(h / 65))
-    hi = min(len(corr) - 1, int(h / 12))
+    hi = min(len(corr) - 1, hi)
     if hi <= lo + 2:
         return 35.0
 
@@ -231,12 +241,51 @@ def find_lines(binary: np.ndarray, pitch: float) -> list[LineBox]:
         # A line is wider than one character and not a blot or a page edge.
         if w < pitch * 0.8 or h < pitch * 0.25:
             continue
-        if h > pitch * 12.0:  # spans a whole column: a box outline, not text
-            continue
+        if h > pitch * 12.0:
+            # Distinguish a hollow box outline or vertical page edge from a dense
+            # multi-line paragraph whose ascenders/descenders welded >12 lines together.
+            # Hollow frames have very low smeared fill (especially in their interior);
+            # dense merged paragraphs have solid horizontal smeared bars throughout and
+            # must be kept so `split_tall` can slice them back into individual lines.
+            if w < pitch * 2.0:
+                continue
+            fill_ratio = float(area) / max(1.0, float(w * h))
+            pad_x = max(1, int(w * 0.12))
+            pad_y = max(1, int(h * 0.12))
+            if h > 2 * pad_y and w > 2 * pad_x:
+                interior = smeared[y + pad_y : y + h - pad_y, x + pad_x : x + w - pad_x]
+                interior_fill = float(np.count_nonzero(interior)) / max(1.0, float(interior.size))
+            else:
+                interior_fill = fill_ratio
+            if fill_ratio < 0.22 or interior_fill < 0.15:
+                continue
         if area < pitch * pitch * 0.12:
             continue
         boxes.append(LineBox(int(x), int(y), int(w), int(h)))
     return boxes
+
+
+def _estimate_local_pitch(profile: np.ndarray, global_pitch: float) -> float:
+    """Refines line pitch locally inside a tall multi-line block."""
+    p = profile - profile.mean()
+    if len(p) < int(global_pitch * 2.5) or not np.any(p):
+        return global_pitch
+    corr = np.correlate(p, p, mode="full")[len(p) - 1 :]
+    lo = max(14, int(global_pitch * 0.55))
+    hi = min(len(corr) - 1, int(global_pitch * 1.65))
+    if hi <= lo + 2:
+        return global_pitch
+    window = corr[lo:hi]
+    peaks = [
+        i for i in range(1, len(window) - 1)
+        if window[i] > window[i - 1] and window[i] >= window[i + 1] and window[i] > 0
+    ]
+    if not peaks:
+        return global_pitch
+    max_val = float(np.max(window))
+    valid_peaks = [idx for idx in peaks if window[idx] >= 0.30 * max_val]
+    chosen = valid_peaks[0] if valid_peaks else int(np.argmax(window))
+    return float(lo + chosen)
 
 
 def split_tall(binary: np.ndarray, boxes: list[LineBox], pitch: float) -> list[LineBox]:
@@ -246,28 +295,45 @@ def split_tall(binary: np.ndarray, boxes: list[LineBox], pitch: float) -> list[L
     are genuinely connected ink and no amount of careful smearing separates
     them. But the *amount* of ink per row still dips between them, so a
     component roughly N pitches tall is split at the N-1 quietest rows near
-    where the boundaries are expected. Searching only a narrow window around
-    each expected boundary stops the cut from wandering into the middle of a
-    line, where a short row of text would also look like a minimum.
+    where the boundaries are expected. For tall merged paragraphs (4+ lines),
+    valley-following tracks the actual inter-line gaps sequentially so organic
+    spacing drift on unruled paper never causes cuts to wander into text lines.
     """
     out: list[LineBox] = []
     for box in boxes:
-        n = int(round(box.h / pitch))
+        roi = binary[box.y : box.y + box.h, box.x : box.x + box.w]
+        profile = roi.sum(axis=1, dtype=np.float64)
+        local_pitch = _estimate_local_pitch(profile, pitch) if box.h >= pitch * 4.0 else pitch
+
+        n = int(round(box.h / local_pitch))
         if n <= 1:
             out.append(box)
             continue
 
-        roi = binary[box.y : box.y + box.h, box.x : box.x + box.w]
-        profile = roi.sum(axis=1, dtype=np.float64)
         smooth = cv2.GaussianBlur(profile.reshape(-1, 1), (1, 5), 0).ravel()
 
         cuts = [0]
-        for k in range(1, n):
-            centre = int(k * box.h / n)
-            lo = max(cuts[-1] + 2, centre - int(pitch * 0.35))
-            hi = min(box.h - 2, centre + int(pitch * 0.35))
-            if hi > lo:
-                cuts.append(lo + int(np.argmin(smooth[lo:hi])))
+        if n >= 4:
+            # Sequential valley-following for tall merged blocks (prevents drift on unruled pages)
+            cur = 0
+            min_step = max(6, int(local_pitch * 0.55))
+            tail_margin = max(6, int(local_pitch * 0.45))
+            while box.h - cur >= local_pitch * 1.35:
+                target = cur + local_pitch
+                lo = max(cur + min_step, int(target - local_pitch * 0.35))
+                hi = min(box.h - tail_margin, int(target + local_pitch * 0.40))
+                if hi <= lo:
+                    break
+                cut = lo + int(np.argmin(smooth[lo:hi]))
+                cuts.append(cut)
+                cur = cut
+        else:
+            for k in range(1, n):
+                centre = int(k * box.h / n)
+                lo = max(cuts[-1] + 2, centre - int(local_pitch * 0.35))
+                hi = min(box.h - 2, centre + int(local_pitch * 0.35))
+                if hi > lo:
+                    cuts.append(lo + int(np.argmin(smooth[lo:hi])))
         cuts.append(box.h)
 
         for top, bottom in zip(cuts, cuts[1:]):
