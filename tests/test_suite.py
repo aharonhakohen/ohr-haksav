@@ -209,6 +209,44 @@ def test_looseleaf_cleaner_and_inverse_box_map():
     assert mapped["x"] >= 100 and mapped["y"] >= 100, f"Box not mapped back into desk coords: {mapped}"
 
 
+def test_dense_handwriting_line_segmentation():
+    """Verify dense >12-line welded cursive paragraphs are split into lines instead of dropped, while hollow boxes are still ignored."""
+    from core.hebocr.page.segment import segment_page
+
+    H, W = 2000, 1400
+    rng = np.random.default_rng(42)
+
+    # 1. Dense 20-line welded paragraph + 2 isolated header lines (mimics compact unruled Torah notes)
+    img = np.full((H, W, 3), 245, dtype=np.uint8)
+    for dx in range(0, 70, 14):
+        cv2.ellipse(img, (1090 + dx, 172), (5, 10), 15, 0, 360, (30, 30, 30), 2)
+    for dx in range(0, 120, 14):
+        cv2.ellipse(img, (650 + dx, 238), (5, 10), -10, 0, 360, (30, 30, 30), 2)
+    for i in range(20):
+        y = 300 + i * 38
+        x = 320
+        while x < 1150:
+            for c in range(5):
+                cv2.ellipse(img, (x + c * 12, y + 10), (4, 9), int(rng.integers(-20, 20)), 0, 360, (35, 35, 35), 2)
+            x += 75
+        if i < 19:
+            for bx in (420, 720, 1020):
+                cv2.line(img, (bx, y + 12), (bx - 8, y + 46), (35, 35, 35), 3)
+
+    _, boxes, _ = segment_page(Image.fromarray(img))
+    assert 20 <= len(boxes) <= 24, f"Dense 20-line welded paragraph was not recovered cleanly: got {len(boxes)} boxes"
+
+    # 2. Hollow box outline should still be rejected while real lines outside remain
+    img_box = np.full((H, W, 3), 245, dtype=np.uint8)
+    cv2.rectangle(img_box, (300, 300), (1100, 1500), (30, 30, 30), 6)
+    for i in range(3):
+        yy = 100 + i * 50
+        for dx in range(0, 400, 16):
+            cv2.ellipse(img_box, (400 + dx, yy), (5, 10), 0, 0, 360, (30, 30, 30), 2)
+    _, boxes_hollow, _ = segment_page(Image.fromarray(img_box))
+    assert len(boxes_hollow) == 3, f"Hollow box outline should be ignored (expected 3 lines, got {len(boxes_hollow)})"
+
+
 if __name__ == "__main__":
     test_i18n_key_parity()
     test_version_consistency()
@@ -221,4 +259,5 @@ if __name__ == "__main__":
     test_sha256_and_strict_offline()
     test_single_pass_and_cursive_fixes()
     test_looseleaf_cleaner_and_inverse_box_map()
-    print("All v1.4.3 unit tests in test_suite.py passed successfully!")
+    test_dense_handwriting_line_segmentation()
+    print("All unit tests in test_suite.py passed successfully!")
