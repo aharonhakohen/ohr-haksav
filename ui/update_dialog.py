@@ -111,9 +111,9 @@ def get_current_app_version() -> str:
     vpath = get_resource_path("version.json")
     try:
         with open(vpath, "r", encoding="utf-8") as f:
-            return json.load(f).get("version", "1.4.3")
+            return json.load(f).get("version", "1.4.4")
     except Exception:
-        return "1.4.3"
+        return "1.4.4"
 
 
 CURRENT_VERSION = get_current_app_version()
