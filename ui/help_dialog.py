@@ -396,7 +396,7 @@ class HelpTutorialDialog(QDialog):
             <p>For network administrators managing computer labs, yeshiva servers, or teachers center workstations:</p>
             <ul>
                 <li><b>Pre-Flight Internet Check:</b> The updater performs an instant socket test (<10ms). On machines without Internet, it immediately falls back to offline mode without freezing.</li>
-                <li><b>UNC Network Share Updates:</b> In <i>Update Source & Settings</i>, configure a shared domain folder (e.g. <code>\\\\fileserver\\Installs\\OhrHaKsav</code>). When you drop <code>version.json</code> and <code>OhrHaKsav_Setup_v1.4.3.exe</code> into this share, all network workstations can detect and install updates locally with zero external internet traffic!</li>
+                <li><b>UNC Network Share Updates:</b> In <i>Update Source & Settings</i>, configure a shared domain folder (e.g. <code>\\\\fileserver\\Installs\\OhrHaKsav</code>). When you drop <code>version.json</code> and <code>OhrHaKsav_Setup_v1.4.4.exe</code> into this share, all network workstations can detect and install updates locally with zero external internet traffic!</li>
                 <li><b>Silent Background Polling:</b> The app quietly checks for updates on launch without disrupting teachers or students.</li>
             </ul>
         </div>
@@ -564,7 +564,7 @@ class HelpTutorialDialog(QDialog):
             <p>עבור מנהלי רשת במוסדות חינוך, מרפ"ד, חדרי מחשבים וישיבות:</p>
             <ul>
                 <li><b>בדיקת חיבור מהירה (8ms):</b> מנגנון בדיקת העדכונים בודק קישוריות מיד. במחשבים ללא גישה לאינטרנט, הוא עובר מיד למצב אופליין ללא השהיות או קריסות.</li>
-                <li><b>עדכונים מתיקיית שרת מקומית (UNC):</b> בלשונית <i>הגדרות ומקור עדכון</i>, ניתן להגדיר נתיב שרת מקומי (כגון <code>\\\\fileserver\\Installs\\OhrHaKsav</code>). כאשר מנהל הרשת מניח בתיקייה זו את <code>version.json</code> ואת קובץ ההתקנה <code>OhrHaKsav_Setup_v1.4.3.exe</code>, כל המחשבים ברשת המקומית יזהו את העדכון ויוכלו להתקינו מקומית ללא אינטרנט!</li>
+                <li><b>עדכונים מתיקיית שרת מקומית (UNC):</b> בלשונית <i>הגדרות ומקור עדכון</i>, ניתן להגדיר נתיב שרת מקומי (כגון <code>\\\\fileserver\\Installs\\OhrHaKsav</code>). כאשר מנהל הרשת מניח בתיקייה זו את <code>version.json</code> ואת קובץ ההתקנה <code>OhrHaKsav_Setup_v1.4.4.exe</code>, כל המחשבים ברשת המקומית יזהו את העדכון ויוכלו להתקינו מקומית ללא אינטרנט!</li>
                 <li><b>בדיקה שקטה ברקע:</b> בעת הפעלת התוכנה מתבצעת בדיקה מהירה ברקע המציגה באנר עדין בלבד כאשר ישנו עדכון חדש.</li>
             </ul>
         </div>

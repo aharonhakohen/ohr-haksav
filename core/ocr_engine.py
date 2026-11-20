@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-TorahNotesOCR - Offline Hebrew OCR Engine (v1.4.3)
+TorahNotesOCR - Offline Hebrew OCR Engine (v1.4.4)
 Wraps the Mishkefet-v1 CTC neural recognizer for Hebrew handwriting,
 providing:
 - 4-point perspective dewarping ("CamScanner" flatten) & dark-desk cropping
