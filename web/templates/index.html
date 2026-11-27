@@ -1,0 +1,1958 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ohr HaKsav Online — אור הכתב · סטודיו אונליין</title>
+  <style>
+    :root {
+      --navy: #0f2942;
+      --navy-deep: #091b2d;
+      --navy-soft: #1a3d5c;
+      --gold: #b88628;
+      --gold-hover: #9e711f;
+      --gold-light: #f9f2e3;
+      --gold-border: #e7d19f;
+      --slate-bg: #f4f6fa;
+      --card-bg: #ffffff;
+      --text-main: #182635;
+      --text-muted: #5a6a7e;
+      --border: #dde4ee;
+      --border-strong: #c4d0e0;
+      --success: #18794e;
+      --success-hover: #13623e;
+      --danger: #b42318;
+      --danger-bg: #fef3f2;
+      --shadow-sm: 0 2px 8px rgba(15, 41, 66, 0.06);
+      --shadow-md: 0 10px 28px rgba(15, 41, 66, 0.09);
+      --radius-lg: 16px;
+      --radius-md: 12px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--text-main);
+      background:
+        radial-gradient(circle at top right, rgba(184, 134, 40, 0.09), transparent 420px),
+        radial-gradient(circle at top left, rgba(15, 41, 66, 0.06), transparent 460px),
+        var(--slate-bg);
+      line-height: 1.5;
+    }
+
+    .hidden { display: none !important; }
+
+    /* Header */
+    .topbar {
+      background: linear-gradient(135deg, var(--navy-deep), var(--navy));
+      color: #ffffff;
+      border-bottom: 3px solid var(--gold);
+      padding: 16px 20px 18px;
+      box-shadow: 0 4px 18px rgba(9, 27, 45, 0.16);
+    }
+
+    .topbar-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 11px;
+      background: rgba(255, 255, 255, 0.09);
+      border: 1px solid rgba(231, 209, 159, 0.4);
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      color: #f3cf7a;
+    }
+
+    .brand-title {
+      margin: 0;
+      font-size: 1.32rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .brand-he {
+      font-family: "Frank Ruhl Libre", "David", "Segoe UI", sans-serif;
+      font-size: 1.08rem;
+      font-weight: 600;
+      color: #f3cf7a;
+    }
+
+    .ver-pill {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      color: #e4edf7;
+    }
+
+    .brand-sub {
+      margin: 2px 0 0;
+      font-size: 0.88rem;
+      color: #cad6e3;
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s ease, transform 0.12s ease, opacity 0.15s ease, border-color 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: 0.52; cursor: not-allowed; transform: none; }
+
+    .btn-sm { padding: 6px 11px; font-size: 0.82rem; border-radius: 8px; }
+
+    .btn-primary { background: var(--navy); color: #ffffff; }
+    .btn-primary:hover:not(:disabled) { background: var(--navy-soft); }
+
+    .btn-gold { background: var(--gold); color: #ffffff; }
+    .btn-gold:hover:not(:disabled) { background: var(--gold-hover); }
+
+    .btn-success { background: var(--success); color: #ffffff; }
+    .btn-success:hover:not(:disabled) { background: var(--success-hover); }
+
+    .btn-ghost {
+      background: #ffffff;
+      color: var(--navy);
+      border: 1px solid var(--border-strong);
+    }
+    .btn-ghost:hover:not(:disabled) { background: #f2f5f9; }
+
+    .btn-nav {
+      background: rgba(255, 255, 255, 0.11);
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+    }
+    .btn-nav:hover { background: rgba(255, 255, 255, 0.19); }
+
+    .btn-danger-soft {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border: 1px solid #fecdca;
+    }
+    .btn-danger-soft:hover:not(:disabled) { background: #fee4e2; }
+
+    /* Container */
+    .wrap {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 20px 20px 44px;
+    }
+
+    /* Privacy Notice */
+    .notice-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: var(--gold-light);
+      border: 1px solid var(--gold-border);
+      border-radius: var(--radius-md);
+      padding: 11px 16px;
+      margin-bottom: 18px;
+      font-size: 0.88rem;
+      color: #5c400b;
+    }
+    .notice-bar a { color: var(--navy); font-weight: 700; text-decoration: underline; }
+
+    /* Panel */
+    .panel {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 22px 24px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 20px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--navy);
+    }
+
+    .panel-sub {
+      margin: 2px 0 0;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    /* Upload Dropzone */
+    .upload-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    @media (max-width: 700px) {
+      .upload-row { grid-template-columns: 1fr; }
+      .panel { padding: 16px; }
+      .wrap { padding: 14px 12px 32px; }
+    }
+
+    .dropzone {
+      border: 2px dashed var(--border-strong);
+      border-radius: var(--radius-md);
+      background: #f9fbfe;
+      padding: 24px 18px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .dropzone:hover,
+    .dropzone.dragover {
+      border-color: var(--navy);
+      background: #eff5fc;
+    }
+
+    .dropzone-main {
+      margin: 6px 0 3px;
+      font-size: 0.98rem;
+      color: var(--navy);
+    }
+
+    .dropzone-hint {
+      margin: 0;
+      font-size: 0.83rem;
+      color: var(--text-muted);
+    }
+
+    .camera-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #f8fafd;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-width: 170px;
+    }
+
+    /* File Queue Grid */
+    .queue-grid {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+      gap: 12px;
+    }
+
+    .queue-item {
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: #fbfcfe;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .queue-thumb-wrap {
+      height: 120px;
+      border-radius: 8px;
+      background: #eef3f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .queue-thumb-wrap img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      transition: transform 0.18s ease;
+    }
+
+    .pdf-badge {
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--navy);
+      background: #dde8f6;
+      padding: 8px 14px;
+      border-radius: 8px;
+    }
+
+    .queue-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 6px;
+      font-size: 0.82rem;
+    }
+
+    .queue-name {
+      font-weight: 600;
+      color: var(--text-main);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .queue-size {
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .queue-actions {
+      display: flex;
+      gap: 6px;
+      justify-content: space-between;
+    }
+
+    /* Options Row */
+    .options-grid {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 20px;
+      padding: 12px 14px;
+      background: #f7f9fc;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .opt-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.88rem;
+      color: var(--text-main);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .opt-check input { width: 16px; height: 16px; accent-color: var(--navy); cursor: pointer; }
+    .opt-hint { color: var(--text-muted); font-size: 0.8rem; }
+
+    .scan-actions {
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Progress & Status */
+    .progress-wrap {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: #f5f8fc;
+      border: 1px solid var(--border);
+    }
+
+    .progress-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: var(--navy);
+      margin-bottom: 7px;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: #dde6f2;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--navy), var(--gold));
+      transition: width 0.18s ease;
+    }
+
+    .status {
+      margin-top: 12px;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      min-height: 1.3em;
+    }
+    .status.error {
+      color: var(--danger);
+      background: var(--danger-bg);
+      border: 1px solid #fecdca;
+      border-radius: 10px;
+      padding: 10px 14px;
+    }
+    .status.success { color: var(--success); font-weight: 600; }
+
+    /* Studio Proofreading Section */
+    .page-tabs {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .page-tab {
+      padding: 6px 13px;
+      border-radius: 999px;
+      border: 1px solid var(--border-strong);
+      background: #ffffff;
+      color: var(--text-main);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .page-tab.active {
+      background: var(--navy);
+      color: #ffffff;
+      border-color: var(--navy);
+    }
+
+    .page-stats {
+      margin-left: auto;
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .studio-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    @media (max-width: 920px) {
+      .studio-grid { grid-template-columns: 1fr; }
+    }
+
+    .pane {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fbfcfe;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 540px;
+    }
+
+    .pane-toolbar {
+      padding: 9px 12px;
+      background: #f0f4f9;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pane-label {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--navy);
+    }
+
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .image-viewport {
+      flex: 1;
+      overflow: auto;
+      background: #e9eef5;
+      padding: 12px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      max-height: 680px;
+    }
+
+    .image-stage {
+      position: relative;
+      display: inline-block;
+      line-height: 0;
+      box-shadow: 0 4px 16px rgba(15, 41, 66, 0.14);
+      background: #ffffff;
+    }
+
+    .image-stage img {
+      display: block;
+      width: 100%;
+      height: auto;
+      user-select: none;
+    }
+
+    .overlay-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .line-box {
+      fill: rgba(15, 41, 66, 0.04);
+      stroke: rgba(26, 61, 92, 0.35);
+      stroke-width: 1.4;
+      cursor: pointer;
+      transition: fill 0.12s ease, stroke 0.12s ease;
+    }
+
+    .line-box:hover {
+      fill: rgba(184, 134, 40, 0.14);
+      stroke: var(--gold);
+      stroke-width: 2;
+    }
+
+    .line-box.low-conf {
+      stroke: rgba(217, 119, 6, 0.72);
+      stroke-dasharray: 4 3;
+      fill: rgba(245, 158, 11, 0.08);
+    }
+
+    .line-box.active {
+      fill: rgba(184, 134, 40, 0.24);
+      stroke: #b88628;
+      stroke-width: 2.6;
+      stroke-dasharray: none;
+    }
+
+    .editor-meta-row {
+      padding: 10px 12px 0;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .title-input {
+      flex: 1;
+      padding: 7px 11px;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      font-family: "Frank Ruhl Libre", "David", "Segoe UI", sans-serif;
+      font-size: 1.02rem;
+      font-weight: 700;
+      direction: rtl;
+      text-align: right;
+      color: var(--navy);
+      background: #ffffff;
+    }
+
+    .editor-textarea {
+      flex: 1;
+      width: 100%;
+      min-height: 430px;
+      border: none;
+      outline: none;
+      resize: vertical;
+      padding: 14px 16px;
+      margin-top: 8px;
+      background: #ffffff;
+      border-top: 1px solid var(--border);
+      direction: rtl;
+      text-align: right;
+      font-family: "Frank Ruhl Libre", "David", "Segoe UI", sans-serif;
+      font-size: 19px;
+      line-height: 1.75;
+      color: #111827;
+    }
+
+    .editor-footer {
+      padding: 10px 12px;
+      background: #f0f4f9;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .editor-tip {
+      font-size: 0.79rem;
+      color: var(--text-muted);
+    }
+
+    /* Modals */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(9, 27, 45, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 1000;
+    }
+
+    .modal {
+      background: #ffffff;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-md);
+      width: 100%;
+      max-width: 640px;
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .modal-head {
+      padding: 16px 20px;
+      background: #f5f8fc;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .modal-title {
+      margin: 0;
+      font-size: 1.08rem;
+      font-weight: 700;
+      color: var(--navy);
+    }
+
+    .modal-body {
+      padding: 18px 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-foot {
+      padding: 12px 20px;
+      background: #f8fafd;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .field {
+      margin-bottom: 12px;
+    }
+    .field label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--navy);
+      margin-bottom: 4px;
+    }
+    .field input[type="text"],
+    .field select {
+      width: 100%;
+      padding: 8px 11px;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      font-size: 0.94rem;
+      font-family: inherit;
+    }
+
+    .rule-pair-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      margin-bottom: 8px;
+      background: #fbfcfe;
+    }
+    .rule-pair-text {
+      flex: 1;
+      direction: rtl;
+      text-align: right;
+      font-family: "Frank Ruhl Libre", "David", "Segoe UI", sans-serif;
+      font-size: 1.05rem;
+    }
+
+    .rules-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .rules-table th,
+    .rules-table td {
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .rules-table td.he {
+      direction: rtl;
+      text-align: right;
+      font-family: "Frank Ruhl Libre", "David", "Segoe UI", sans-serif;
+      font-size: 1rem;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--navy-deep);
+      color: #ffffff;
+      border-left: 4px solid var(--gold);
+      padding: 11px 16px;
+      border-radius: 10px;
+      box-shadow: var(--shadow-md);
+      font-size: 0.9rem;
+      z-index: 1100;
+    }
+
+    .footer-note {
+      margin-top: 24px;
+      text-align: center;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"></path>
+            <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">
+            <span>Ohr HaKsav Online</span>
+            <span class="brand-he" dir="rtl">אור הכתב · סטודיו אונליין</span>
+            <span class="ver-pill">v{{ version }}</span>
+          </h1>
+          <p class="brand-sub">Hebrew handwriting transcription, proofreading &amp; Word export in your browser</p>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <a href="{{ hub_url }}" class="btn btn-nav">← All Tools</a>
+        <a href="{{ windows_download_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-gold">
+          Download Windows App (Offline) ↗
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="notice-bar">
+      <span>
+        <strong>Privacy &amp; Speed:</strong> Notebook photos are processed in server RAM and discarded immediately after scanning — never saved on disk. Learned corrections are stored privately in your browser.
+      </span>
+      <span>
+        Need 100% offline use or 50+ page batches?
+        <a href="{{ windows_download_url }}" target="_blank" rel="noopener noreferrer">Get the Windows Desktop App</a>
+      </span>
+    </div>
+
+    {% if not model_available %}
+    <div class="status error" style="margin-bottom:16px;">
+      OCR model weights (<code>mishkefet-v1.pt</code>) were not found on this server. Run <code>python scripts/download_model.py</code> before scanning.
+    </div>
+    {% endif %}
+
+    <!-- Step 1: Upload & Scan Options -->
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">1. Attach Notebook Pages</h2>
+          <p class="panel-sub">Upload photos or PDFs (up to 20 pages per scan), rotate if sideways, and choose cleaning options.</p>
+        </div>
+        <button type="button" id="openRulesBtn" class="btn btn-ghost">
+          📚 My Learned Rules (<span id="rulesCountBadge">0</span>)
+        </button>
+      </div>
+
+      <div class="upload-row">
+        <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Choose notebook images or PDF files">
+          <div style="color:var(--navy);">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+          </div>
+          <p class="dropzone-main"><strong>Drop notebook photos or PDFs here</strong> or click to browse</p>
+          <p class="dropzone-hint">Supports JPG, PNG, WebP, BMP, TIFF, and PDF (max 25 MB per file)</p>
+          <input id="fileInput" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,.pdf" hidden>
+        </div>
+
+        <div class="camera-card">
+          <span style="font-size:0.84rem; font-weight:600; color:var(--navy);">On a phone or tablet?</span>
+          <button type="button" id="cameraBtn" class="btn btn-ghost">📷 Take Photo</button>
+          <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+        </div>
+      </div>
+
+      <div id="queueGrid" class="queue-grid hidden"></div>
+
+      <div class="options-grid">
+        <label class="opt-check" title="Removes binder holes, red margin line, and pale blue ruled lines">
+          <input type="checkbox" id="optLooseleaf" checked>
+          <span>Looseleaf Paper Cleaner</span>
+        </label>
+        <label class="opt-check" title="Normalizes uneven desk-lamp lighting and dark shadows">
+          <input type="checkbox" id="optShadows">
+          <span>Shadow &amp; Lighting Cleaner</span>
+        </label>
+        <label class="opt-check" title="Splits open two-page notebook photos in Hebrew Right-to-Left order">
+          <input type="checkbox" id="optSpread">
+          <span>Split Two-Page Spread</span>
+        </label>
+        <label class="opt-check" title="Uses beam search (beam=5) for higher accuracy; takes longer per page">
+          <input type="checkbox" id="optBeam">
+          <span>High-Accuracy Mode <span class="opt-hint">(slower)</span></span>
+        </label>
+      </div>
+
+      <div class="scan-actions">
+        <button type="button" id="scanBtn" class="btn btn-primary" disabled>⚡ Scan Pages</button>
+        <button type="button" id="clearQueueBtn" class="btn btn-ghost hidden">Clear Pages</button>
+      </div>
+
+      <div id="progressWrap" class="progress-wrap hidden">
+        <div class="progress-head">
+          <span id="progressStage">Preparing...</span>
+          <span id="progressPct">0%</span>
+        </div>
+        <div class="progress-track">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+      </div>
+
+      <div id="statusEl" class="status" role="status" aria-live="polite"></div>
+    </section>
+
+    <!-- Step 2: Side-by-Side Proofreading Studio -->
+    <section id="studioPanel" class="panel hidden">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">2. Proofread, Teach &amp; Export</h2>
+          <p class="panel-sub">Click any handwritten line on the left (or move your cursor in the Hebrew editor) to highlight and match lines.</p>
+        </div>
+        <div class="toolbar-group">
+          <button type="button" id="openExportBtn" class="btn btn-success">📝 Export to Word (.docx)</button>
+        </div>
+      </div>
+
+      <div class="page-tabs" id="pageTabs"></div>
+
+      <div class="studio-grid">
+        <!-- Left Pane: Image + Line Highlight Overlay -->
+        <div class="pane">
+          <div class="pane-toolbar">
+            <span class="pane-label">Original Page</span>
+            <div class="toolbar-group">
+              <button type="button" id="zoomOutBtn" class="btn btn-ghost btn-sm" title="Zoom out">−</button>
+              <button type="button" id="zoomFitBtn" class="btn btn-ghost btn-sm" title="Fit to pane">Fit</button>
+              <button type="button" id="zoom100Btn" class="btn btn-ghost btn-sm" title="100% width">100%</button>
+              <button type="button" id="zoomInBtn" class="btn btn-ghost btn-sm" title="Zoom in">+</button>
+              <label class="opt-check" style="margin-left:6px;">
+                <input type="checkbox" id="toggleBoxes" checked>
+                <span>Show Line Boxes</span>
+              </label>
+            </div>
+          </div>
+          <div id="imageViewport" class="image-viewport">
+            <div id="imageStage" class="image-stage">
+              <img id="studioImg" alt="Scanned notebook page">
+              <svg id="overlaySvg" class="overlay-svg" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Pane: RTL Hebrew Proofreading Editor -->
+        <div class="pane">
+          <div class="pane-toolbar">
+            <span class="pane-label">Hebrew Transcription (RTL)</span>
+            <div class="toolbar-group">
+              <button type="button" id="fontDecBtn" class="btn btn-ghost btn-sm" title="Smaller text">A−</button>
+              <button type="button" id="fontIncBtn" class="btn btn-ghost btn-sm" title="Larger text">A+</button>
+              <button type="button" id="copyPageBtn" class="btn btn-ghost btn-sm">📋 Copy Page</button>
+              <button type="button" id="copyAllBtn" class="btn btn-ghost btn-sm hidden">📋 Copy All</button>
+            </div>
+          </div>
+          <div class="editor-meta-row">
+            <input type="text" id="pageTitleInput" class="title-input" placeholder="כותרת העמוד (לדוגמה: שיעור א')">
+          </div>
+          <textarea id="editorTextarea" class="editor-textarea" dir="rtl" spellcheck="false" placeholder="Transcribed Hebrew text will appear here..."></textarea>
+          <div class="editor-footer">
+            <span class="editor-tip">Dashed amber boxes mark lower-confidence lines to double-check.</span>
+            <button type="button" id="learnBtn" class="btn btn-gold">🎓 Save &amp; Learn Mistakes</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <p class="footer-note">Ohr HaKsav (אור הכתב) · Shared engine with the 100% offline Windows desktop studio</p>
+  </main>
+
+  <!-- Learn Mistakes Confirmation Modal -->
+  <div id="learnModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="learnModalTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <h3 id="learnModalTitle" class="modal-title">🎓 Save &amp; Learn Mistakes</h3>
+        <button type="button" id="closeLearnModal" class="btn btn-ghost btn-sm">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="learnModalDesc" style="margin-top:0; font-size:0.9rem; color:var(--text-muted);"></p>
+        <div id="learnPairsList"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" id="learnManageBtn" class="btn btn-ghost" style="margin-right:auto;">Manage Rules</button>
+        <button type="button" id="cancelLearnBtn" class="btn btn-ghost">Cancel</button>
+        <button type="button" id="confirmLearnBtn" class="btn btn-gold">Save Selected Rules</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- My Learned Rules Modal -->
+  <div id="rulesModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="rulesModalTitle">
+    <div class="modal" style="max-width:720px;">
+      <div class="modal-head">
+        <h3 id="rulesModalTitle" class="modal-title">📚 My Learned Rules (Browser Storage)</h3>
+        <button type="button" id="closeRulesModal" class="btn btn-ghost btn-sm">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-top:0; font-size:0.86rem; color:var(--text-muted);">
+          Rules are saved locally in your browser and sent with your scans alongside the built-in Yeshiva abbreviations.
+          Export or import <code>.json</code> to share rules with the Windows desktop app.
+        </p>
+
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
+          <input type="text" id="newRuleRaw" dir="rtl" placeholder="OCR misread (לדוגמה: תום)" style="flex:1; min-width:140px; padding:7px 10px; border:1px solid var(--border-strong); border-radius:8px;">
+          <input type="text" id="newRuleCorr" dir="rtl" placeholder="Correct Hebrew (לדוגמה: תוס')" style="flex:1; min-width:140px; padding:7px 10px; border:1px solid var(--border-strong); border-radius:8px;">
+          <button type="button" id="addManualRuleBtn" class="btn btn-primary btn-sm">+ Add Rule</button>
+        </div>
+
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+          <input type="text" id="rulesSearchInput" placeholder="Search rules..." style="flex:1; min-width:160px; padding:6px 10px; border:1px solid var(--border-strong); border-radius:8px;">
+          <button type="button" id="exportRulesBtn" class="btn btn-ghost btn-sm">Export .json</button>
+          <button type="button" id="importRulesBtn" class="btn btn-ghost btn-sm">Import .json</button>
+          <input type="file" id="importRulesInput" accept=".json" hidden>
+          <button type="button" id="clearAllRulesBtn" class="btn btn-danger-soft btn-sm">Clear All</button>
+        </div>
+
+        <div style="max-height:300px; overflow-y:auto; border:1px solid var(--border); border-radius:9px;">
+          <table class="rules-table">
+            <thead>
+              <tr style="background:#f5f8fc;">
+                <th>OCR Read</th>
+                <th>Correction</th>
+                <th style="width:70px;">Active</th>
+                <th style="width:70px;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="rulesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" id="doneRulesBtn" class="btn btn-primary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export to Word Modal -->
+  <div id="exportModalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="exportModalTitle">
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-head">
+        <h3 id="exportModalTitle" class="modal-title">📝 Export to Microsoft Word (.docx)</h3>
+        <button type="button" id="closeExportModal" class="btn btn-ghost btn-sm">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="expDocTitle">Document Title</label>
+          <input type="text" id="expDocTitle" dir="rtl" value="שיעורי תורה וחידושים">
+        </div>
+        <div class="field">
+          <label for="expDocSubtitle">Subtitle (optional)</label>
+          <input type="text" id="expDocSubtitle" dir="rtl" placeholder="לדוגמה: מסכת בבא קמא">
+        </div>
+        <div class="field">
+          <label for="expAuthor">Author / Maggid Shiur (optional)</label>
+          <input type="text" id="expAuthor" dir="rtl" placeholder="שם המחבר">
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="field">
+            <label for="expFont">Hebrew Font</label>
+            <select id="expFont">
+              <option value="David" selected>David</option>
+              <option value="FrankRuehl">FrankRuehl</option>
+              <option value="Arial">Arial</option>
+              <option value="Times New Roman">Times New Roman</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="expLayout">Page Layout</label>
+            <select id="expLayout">
+              <option value="standard" selected>Standard (Page Break per Page)</option>
+              <option value="continuous">Continuous Flow</option>
+              <option value="two_column">Two-Column Sefer / Kuntres</option>
+            </select>
+          </div>
+        </div>
+        <label class="opt-check">
+          <input type="checkbox" id="expIncludeHeaders" checked>
+          <span>Include per-page headers and page numbers</span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button type="button" id="cancelExportBtn" class="btn btn-ghost">Cancel</button>
+        <button type="button" id="confirmExportBtn" class="btn btn-success">Download .docx</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toastEl" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <script>
+    (function () {
+      const STORAGE_KEY = "ohr_haksav_user_rules_v1";
+      const MAX_PAGES = 20;
+      const MAX_FILE_BYTES = 25 * 1024 * 1024;
+      const ALLOWED_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".pdf"];
+
+      // DOM elements
+      const dropzone = document.getElementById("dropzone");
+      const fileInput = document.getElementById("fileInput");
+      const cameraBtn = document.getElementById("cameraBtn");
+      const cameraInput = document.getElementById("cameraInput");
+      const queueGrid = document.getElementById("queueGrid");
+      const scanBtn = document.getElementById("scanBtn");
+      const clearQueueBtn = document.getElementById("clearQueueBtn");
+      const optLooseleaf = document.getElementById("optLooseleaf");
+      const optShadows = document.getElementById("optShadows");
+      const optSpread = document.getElementById("optSpread");
+      const optBeam = document.getElementById("optBeam");
+      const progressWrap = document.getElementById("progressWrap");
+      const progressStage = document.getElementById("progressStage");
+      const progressPct = document.getElementById("progressPct");
+      const progressFill = document.getElementById("progressFill");
+      const statusEl = document.getElementById("statusEl");
+
+      const studioPanel = document.getElementById("studioPanel");
+      const pageTabs = document.getElementById("pageTabs");
+      const imageViewport = document.getElementById("imageViewport");
+      const imageStage = document.getElementById("imageStage");
+      const studioImg = document.getElementById("studioImg");
+      const overlaySvg = document.getElementById("overlaySvg");
+      const zoomOutBtn = document.getElementById("zoomOutBtn");
+      const zoomFitBtn = document.getElementById("zoomFitBtn");
+      const zoom100Btn = document.getElementById("zoom100Btn");
+      const zoomInBtn = document.getElementById("zoomInBtn");
+      const toggleBoxes = document.getElementById("toggleBoxes");
+
+      const pageTitleInput = document.getElementById("pageTitleInput");
+      const editorTextarea = document.getElementById("editorTextarea");
+      const fontDecBtn = document.getElementById("fontDecBtn");
+      const fontIncBtn = document.getElementById("fontIncBtn");
+      const copyPageBtn = document.getElementById("copyPageBtn");
+      const copyAllBtn = document.getElementById("copyAllBtn");
+      const learnBtn = document.getElementById("learnBtn");
+      const openExportBtn = document.getElementById("openExportBtn");
+
+      // Rules & Modals
+      const openRulesBtn = document.getElementById("openRulesBtn");
+      const rulesCountBadge = document.getElementById("rulesCountBadge");
+      const learnModalBackdrop = document.getElementById("learnModalBackdrop");
+      const closeLearnModal = document.getElementById("closeLearnModal");
+      const cancelLearnBtn = document.getElementById("cancelLearnBtn");
+      const learnManageBtn = document.getElementById("learnManageBtn");
+      const confirmLearnBtn = document.getElementById("confirmLearnBtn");
+      const learnModalDesc = document.getElementById("learnModalDesc");
+      const learnPairsList = document.getElementById("learnPairsList");
+
+      const rulesModalBackdrop = document.getElementById("rulesModalBackdrop");
+      const closeRulesModal = document.getElementById("closeRulesModal");
+      const doneRulesBtn = document.getElementById("doneRulesBtn");
+      const newRuleRaw = document.getElementById("newRuleRaw");
+      const newRuleCorr = document.getElementById("newRuleCorr");
+      const addManualRuleBtn = document.getElementById("addManualRuleBtn");
+      const rulesSearchInput = document.getElementById("rulesSearchInput");
+      const exportRulesBtn = document.getElementById("exportRulesBtn");
+      const importRulesBtn = document.getElementById("importRulesBtn");
+      const importRulesInput = document.getElementById("importRulesInput");
+      const clearAllRulesBtn = document.getElementById("clearAllRulesBtn");
+      const rulesTableBody = document.getElementById("rulesTableBody");
+
+      const exportModalBackdrop = document.getElementById("exportModalBackdrop");
+      const closeExportModal = document.getElementById("closeExportModal");
+      const cancelExportBtn = document.getElementById("cancelExportBtn");
+      const confirmExportBtn = document.getElementById("confirmExportBtn");
+      const expDocTitle = document.getElementById("expDocTitle");
+      const expDocSubtitle = document.getElementById("expDocSubtitle");
+      const expAuthor = document.getElementById("expAuthor");
+      const expFont = document.getElementById("expFont");
+      const expLayout = document.getElementById("expLayout");
+      const expIncludeHeaders = document.getElementById("expIncludeHeaders");
+      const toastEl = document.getElementById("toastEl");
+
+      // State
+      let queue = []; // { file, name, size, isPdf, thumbUrl, rotDeg }
+      let scannedPages = []; // { page_num, title, image_data_url, image_width, image_height, lines, text, initialText, corrections_applied }
+      let activePageIdx = 0;
+      let activeLineIdx = -1;
+      let zoomMode = "fit"; // "fit" | number (percentage)
+      let editorFontPx = 19;
+      let isScanning = false;
+      let pendingLearnPairs = [];
+      let toastTimer = null;
+
+      function showToast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.remove("hidden");
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () {
+          toastEl.classList.add("hidden");
+        }, 3200);
+      }
+
+      function formatBytes(bytes) {
+        if (!bytes) return "0 B";
+        const units = ["B", "KB", "MB", "GB"];
+        let idx = 0;
+        let val = bytes;
+        while (val >= 1024 && idx < units.length - 1) {
+          val /= 1024;
+          idx++;
+        }
+        return (idx === 0 ? val : val.toFixed(1)) + " " + units[idx];
+      }
+
+      function setStatus(msg, kind) {
+        statusEl.textContent = msg || "";
+        statusEl.className = "status" + (kind ? " " + kind : "");
+      }
+
+      function setProgress(pct, stage) {
+        const clamped = Math.max(0, Math.min(100, Math.round(pct || 0)));
+        progressWrap.classList.remove("hidden");
+        progressPct.textContent = clamped + "%";
+        progressFill.style.width = clamped + "%";
+        if (stage) progressStage.textContent = stage;
+      }
+
+      // Browser-local rules management
+      function loadUserRules() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return [];
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          return [];
+        }
+      }
+
+      function saveUserRules(rules) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(rules));
+        } catch (e) {
+          showToast("Warning: browser storage is full; rules kept for this session only.");
+        }
+        updateRulesBadge();
+      }
+
+      function updateRulesBadge() {
+        const rules = loadUserRules();
+        const activeCount = rules.filter(function (r) { return r && r.is_active !== false; }).length;
+        rulesCountBadge.textContent = String(activeCount);
+      }
+
+      function upsertUserRules(pairs) {
+        const rules = loadUserRules();
+        const byRaw = new Map();
+        rules.forEach(function (r) {
+          if (r && r.raw_text && r.corrected_text) {
+            byRaw.set(r.raw_text, r);
+          }
+        });
+        let added = 0;
+        pairs.forEach(function (p) {
+          const raw = String(p.raw_text || "").trim();
+          const corr = String(p.corrected_text || "").trim();
+          if (!raw || !corr || raw === corr) return;
+          const existing = byRaw.get(raw);
+          if (existing) {
+            existing.corrected_text = corr;
+            existing.count = (existing.count || 1) + 1;
+            existing.is_active = true;
+          } else {
+            byRaw.set(raw, { raw_text: raw, corrected_text: corr, count: 1, is_active: true });
+          }
+          added++;
+        });
+        saveUserRules(Array.from(byRaw.values()));
+        return added;
+      }
+
+      // Queue rendering
+      function renderQueue() {
+        queueGrid.innerHTML = "";
+        if (queue.length === 0) {
+          queueGrid.classList.add("hidden");
+          clearQueueBtn.classList.add("hidden");
+          scanBtn.disabled = true;
+          return;
+        }
+        queueGrid.classList.remove("hidden");
+        clearQueueBtn.classList.remove("hidden");
+        scanBtn.disabled = isScanning;
+
+        queue.forEach(function (item, idx) {
+          const card = document.createElement("div");
+          card.className = "queue-item";
+
+          const thumbWrap = document.createElement("div");
+          thumbWrap.className = "queue-thumb-wrap";
+          if (item.isPdf) {
+            const pdfBadge = document.createElement("div");
+            pdfBadge.className = "pdf-badge";
+            pdfBadge.textContent = "PDF Document";
+            thumbWrap.appendChild(pdfBadge);
+          } else if (item.thumbUrl) {
+            const img = document.createElement("img");
+            img.src = item.thumbUrl;
+            img.alt = item.name;
+            img.style.transform = "rotate(" + item.rotDeg + "deg)";
+            thumbWrap.appendChild(img);
+          }
+
+          const meta = document.createElement("div");
+          meta.className = "queue-meta";
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "queue-name";
+          nameSpan.textContent = item.name;
+          nameSpan.title = item.name;
+          const sizeSpan = document.createElement("span");
+          sizeSpan.className = "queue-size";
+          sizeSpan.textContent = formatBytes(item.size);
+          meta.appendChild(nameSpan);
+          meta.appendChild(sizeSpan);
+
+          const actions = document.createElement("div");
+          actions.className = "queue-actions";
+
+          const rotBtn = document.createElement("button");
+          rotBtn.type = "button";
+          rotBtn.className = "btn btn-ghost btn-sm";
+          rotBtn.textContent = "↻ 90°" + (item.rotDeg ? " (" + item.rotDeg + "°)" : "");
+          rotBtn.disabled = isScanning;
+          rotBtn.addEventListener("click", function () {
+            item.rotDeg = (item.rotDeg + 90) % 360;
+            renderQueue();
+          });
+
+          const remBtn = document.createElement("button");
+          remBtn.type = "button";
+          remBtn.className = "btn btn-danger-soft btn-sm";
+          remBtn.textContent = "×";
+          remBtn.setAttribute("aria-label", "Remove " + item.name);
+          remBtn.disabled = isScanning;
+          remBtn.addEventListener("click", function () {
+            if (item.thumbUrl) URL.revokeObjectURL(item.thumbUrl);
+            queue.splice(idx, 1);
+            renderQueue();
+          });
+
+          actions.appendChild(rotBtn);
+          actions.appendChild(remBtn);
+
+          card.appendChild(thumbWrap);
+          card.appendChild(meta);
+          card.appendChild(actions);
+          queueGrid.appendChild(card);
+        });
+      }
+
+      function addFilesToQueue(fileList) {
+        const incoming = Array.from(fileList || []);
+        if (!incoming.length) return;
+        setStatus("");
+        let skipped = [];
+
+        for (const f of incoming) {
+          if (queue.length >= MAX_PAGES) {
+            skipped.push(f.name + " (max " + MAX_PAGES + " files)");
+            continue;
+          }
+          const lower = (f.name || "").toLowerCase();
+          const hasAllowedExt = ALLOWED_EXTS.some(function (ext) { return lower.endsWith(ext); });
+          if (!hasAllowedExt) {
+            skipped.push(f.name + " (unsupported format)");
+            continue;
+          }
+          if (f.size > MAX_FILE_BYTES) {
+            skipped.push(f.name + " (exceeds 25 MB)");
+            continue;
+          }
+          const isPdf = lower.endsWith(".pdf");
+          const thumbUrl = isPdf ? null : URL.createObjectURL(f);
+          queue.push({
+            file: f,
+            name: f.name || "page.jpg",
+            size: f.size,
+            isPdf: isPdf,
+            thumbUrl: thumbUrl,
+            rotDeg: 0
+          });
+        }
+
+        if (skipped.length) {
+          setStatus("Skipped: " + skipped.join(", "), "error");
+        }
+        renderQueue();
+      }
+
+      dropzone.addEventListener("click", function () { if (!isScanning) fileInput.click(); });
+      dropzone.addEventListener("keydown", function (e) {
+        if (!isScanning && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          fileInput.click();
+        }
+      });
+      dropzone.addEventListener("dragover", function (e) { e.preventDefault(); dropzone.classList.add("dragover"); });
+      dropzone.addEventListener("dragleave", function () { dropzone.classList.remove("dragover"); });
+      dropzone.addEventListener("drop", function (e) {
+        e.preventDefault();
+        dropzone.classList.remove("dragover");
+        if (!isScanning && e.dataTransfer && e.dataTransfer.files) {
+          addFilesToQueue(e.dataTransfer.files);
+        }
+      });
+
+      fileInput.addEventListener("change", function () {
+        addFilesToQueue(fileInput.files);
+        fileInput.value = "";
+      });
+
+      cameraBtn.addEventListener("click", function () { if (!isScanning) cameraInput.click(); });
+      cameraInput.addEventListener("change", function () {
+        addFilesToQueue(cameraInput.files);
+        cameraInput.value = "";
+      });
+
+      clearQueueBtn.addEventListener("click", function () {
+        if (isScanning) return;
+        queue.forEach(function (item) { if (item.thumbUrl) URL.revokeObjectURL(item.thumbUrl); });
+        queue = [];
+        renderQueue();
+        setStatus("");
+      });
+
+      // Studio rendering
+      function applyImageZoom() {
+        const page = scannedPages[activePageIdx];
+        if (!page) return;
+        if (zoomMode === "fit") {
+          imageStage.style.width = "100%";
+        } else {
+          imageStage.style.width = zoomMode + "%";
+        }
+      }
+
+      function renderOverlayBoxes() {
+        overlaySvg.innerHTML = "";
+        const page = scannedPages[activePageIdx];
+        if (!page || !toggleBoxes.checked) {
+          overlaySvg.style.display = "none";
+          return;
+        }
+        overlaySvg.style.display = "block";
+        (page.lines || []).forEach(function (line, idx) {
+          const nb = line.nbox;
+          if (!nb || nb.w <= 0 || nb.h <= 0) return;
+          const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          rect.setAttribute("x", String(nb.x * 1000));
+          rect.setAttribute("y", String(nb.y * 1000));
+          rect.setAttribute("width", String(nb.w * 1000));
+          rect.setAttribute("height", String(nb.h * 1000));
+          rect.setAttribute("rx", "4");
+          rect.setAttribute("vector-effect", "non-scaling-stroke");
+          let cls = "line-box";
+          if (typeof line.confidence === "number" && line.confidence < 0.72) cls += " low-conf";
+          if (idx === activeLineIdx) cls += " active";
+          rect.setAttribute("class", cls);
+          rect.dataset.lineIdx = String(idx);
+          rect.addEventListener("click", function () {
+            selectLineFromImage(idx);
+          });
+          overlaySvg.appendChild(rect);
+        });
+      }
+
+      function highlightActiveBox(scrollIntoView) {
+        const rects = overlaySvg.querySelectorAll("rect.line-box");
+        rects.forEach(function (r) {
+          const idx = Number(r.dataset.lineIdx);
+          r.classList.toggle("active", idx === activeLineIdx);
+          if (idx === activeLineIdx && scrollIntoView) {
+            const boxTop = r.getBoundingClientRect().top;
+            const vpRect = imageViewport.getBoundingClientRect();
+            if (boxTop < vpRect.top + 20 || boxTop > vpRect.bottom - 40) {
+              r.scrollIntoView({ block: "center", behavior: "smooth" });
+            }
+          }
+        });
+      }
+
+      function selectLineFromImage(lineIdx) {
+        activeLineIdx = lineIdx;
+        highlightActiveBox(false);
+        const lines = editorTextarea.value.split("\n");
+        if (lineIdx < 0 || lineIdx >= lines.length) return;
+        let startPos = 0;
+        for (let i = 0; i < lineIdx; i++) {
+          startPos += lines[i].length + 1;
+        }
+        const endPos = startPos + lines[lineIdx].length;
+        editorTextarea.focus();
+        editorTextarea.setSelectionRange(startPos, endPos);
+      }
+
+      function syncLineFromCursor() {
+        const pos = editorTextarea.selectionStart || 0;
+        const lineIdx = editorTextarea.value.slice(0, pos).split("\n").length - 1;
+        if (lineIdx !== activeLineIdx) {
+          activeLineIdx = lineIdx;
+          highlightActiveBox(true);
+        }
+      }
+
+      function renderPageTabs() {
+        pageTabs.innerHTML = "";
+        scannedPages.forEach(function (pg, idx) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "page-tab" + (idx === activePageIdx ? " active" : "");
+          btn.textContent = "Page " + (idx + 1);
+          btn.addEventListener("click", function () {
+            selectPage(idx);
+          });
+          pageTabs.appendChild(btn);
+        });
+
+        const active = scannedPages[activePageIdx];
+        if (active) {
+          const stats = document.createElement("span");
+          stats.className = "page-stats";
+          const lineCount = (active.lines || []).length;
+          const corrCount = active.corrections_applied || 0;
+          stats.textContent = lineCount + " lines · " + corrCount + " auto-corrections applied";
+          pageTabs.appendChild(stats);
+        }
+        copyAllBtn.classList.toggle("hidden", scannedPages.length <= 1);
+      }
+
+      function selectPage(idx) {
+        if (idx < 0 || idx >= scannedPages.length) return;
+        activePageIdx = idx;
+        activeLineIdx = -1;
+        const pg = scannedPages[idx];
+        studioImg.src = pg.image_data_url;
+        pageTitleInput.value = pg.title || ("עמוד " + (idx + 1));
+        editorTextarea.value = pg.text || "";
+        editorTextarea.style.fontSize = editorFontPx + "px";
+        applyImageZoom();
+        renderPageTabs();
+        renderOverlayBoxes();
+      }
+
+      pageTitleInput.addEventListener("input", function () {
+        if (scannedPages[activePageIdx]) {
+          scannedPages[activePageIdx].title = pageTitleInput.value;
+        }
+      });
+
+      editorTextarea.addEventListener("input", function () {
+        if (scannedPages[activePageIdx]) {
+          scannedPages[activePageIdx].text = editorTextarea.value;
+        }
+        syncLineFromCursor();
+      });
+      editorTextarea.addEventListener("click", syncLineFromCursor);
+      editorTextarea.addEventListener("keyup", syncLineFromCursor);
+
+      toggleBoxes.addEventListener("change", renderOverlayBoxes);
+      zoomOutBtn.addEventListener("click", function () {
+        const cur = zoomMode === "fit" ? 100 : zoomMode;
+        zoomMode = Math.max(50, cur - 25);
+        applyImageZoom();
+      });
+      zoomInBtn.addEventListener("click", function () {
+        const cur = zoomMode === "fit" ? 100 : zoomMode;
+        zoomMode = Math.min(250, cur + 25);
+        applyImageZoom();
+      });
+      zoom100Btn.addEventListener("click", function () { zoomMode = 100; applyImageZoom(); });
+      zoomFitBtn.addEventListener("click", function () { zoomMode = "fit"; applyImageZoom(); });
+
+      fontDecBtn.addEventListener("click", function () {
+        editorFontPx = Math.max(13, editorFontPx - 2);
+        editorTextarea.style.fontSize = editorFontPx + "px";
+      });
+      fontIncBtn.addEventListener("click", function () {
+        editorFontPx = Math.min(34, editorFontPx + 2);
+        editorTextarea.style.fontSize = editorFontPx + "px";
+      });
+
+      copyPageBtn.addEventListener("click", async function () {
+        const pg = scannedPages[activePageIdx];
+        if (!pg) return;
+        try {
+          await navigator.clipboard.writeText(pg.text || "");
+          showToast("Copied Page " + (activePageIdx + 1) + " to clipboard.");
+        } catch (e) {
+          showToast("Select text and press Ctrl+C to copy.");
+        }
+      });
+
+      copyAllBtn.addEventListener("click", async function () {
+        if (!scannedPages.length) return;
+        const combined = scannedPages.map(function (pg, i) {
+          return "--- " + (pg.title || ("עמוד " + (i + 1))) + " ---\n" + (pg.text || "");
+        }).join("\n\n");
+        try {
+          await navigator.clipboard.writeText(combined);
+          showToast("Copied all " + scannedPages.length + " pages to clipboard.");
+        } catch (e) {
+          showToast("Copy failed; please copy from editor.");
+        }
+      });
+
+      // Scan via NDJSON streaming
+      scanBtn.addEventListener("click", async function () {
+        if (isScanning || queue.length === 0) return;
+
+        isScanning = true;
+        renderQueue();
+        setStatus("");
+        setProgress(3, "Uploading pages...");
+        scannedPages = [];
+        activePageIdx = 0;
+        studioPanel.classList.add("hidden");
+
+        try {
+          const fd = new FormData();
+          const rotations = queue.map(function (item) { return item.rotDeg || 0; });
+          queue.forEach(function (item) {
+            fd.append("files", item.file, item.name);
+          });
+          fd.append("rotations", JSON.stringify(rotations));
+          fd.append("clean_looseleaf", String(optLooseleaf.checked));
+          fd.append("clean_shadows", String(optShadows.checked));
+          fd.append("high_accuracy", String(optBeam.checked));
+          fd.append("split_spread", String(optSpread.checked));
+          fd.append("auto_orient", "true");
+          fd.append("user_rules", JSON.stringify(loadUserRules()));
+
+          const res = await fetch("/api/ocr/scan-stream", { method: "POST", body: fd });
+          if (!res.ok) {
+            let msg = "Scan failed (" + res.status + ")";
+            try {
+              const errJson = await res.json();
+              if (errJson && errJson.detail) msg = errJson.detail;
+            } catch (e) {}
+            throw new Error(msg);
+          }
+
+          if (!res.body) throw new Error("Streaming response unavailable in this browser.");
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let gotDone = false;
+
+          function handleEvent(ev) {
+            if (!ev || !ev.type) return;
+            if (ev.type === "progress") {
+              setProgress(ev.pct, ev.stage);
+            } else if (ev.type === "page_result") {
+              scannedPages.push({
+                page_num: ev.page_num || (scannedPages.length + 1),
+                title: ev.title || ("עמוד " + (scannedPages.length + 1)),
+                image_data_url: ev.image_data_url,
+                image_width: ev.image_width,
+                image_height: ev.image_height,
+                lines: ev.lines || [],
+                text: ev.full_text || "",
+                initialText: ev.full_text || "",
+                corrections_applied: ev.corrections_applied || 0
+              });
+              studioPanel.classList.remove("hidden");
+              if (scannedPages.length === 1) {
+                selectPage(0);
+              } else {
+                renderPageTabs();
+              }
+            } else if (ev.type === "done") {
+              gotDone = true;
+              setProgress(100, ev.stage || "Scan complete!");
+              setStatus("Scanned " + scannedPages.length + " page(s). Proofread side-by-side below.", "success");
+            } else if (ev.type === "error") {
+              throw new Error(ev.detail || "OCR scan failed");
+            }
+          }
+
+          while (true) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed) handleEvent(JSON.parse(trimmed));
+            }
+          }
+          if (buffer.trim()) handleEvent(JSON.parse(buffer.trim()));
+          if (!gotDone && scannedPages.length === 0) {
+            throw new Error("Connection closed before scan completed.");
+          }
+        } catch (err) {
+          progressWrap.classList.add("hidden");
+          setStatus(err && err.message ? err.message : "Scan failed", "error");
+        } finally {
+          isScanning = false;
+          renderQueue();
+        }
+      });
+
+      // Save & Learn Mistakes modal
+      learnBtn.addEventListener("click", async function () {
+        const pg = scannedPages[activePageIdx];
+        if (!pg) return;
+        learnBtn.disabled = true;
+        try {
+          const res = await fetch("/api/ocr/extract-rules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              raw_text: pg.initialText || "",
+              corrected_text: pg.text || ""
+            })
+          });
+          const data = await res.json();
+          pendingLearnPairs = (data && Array.isArray(data.pairs)) ? data.pairs : [];
+          learnPairsList.innerHTML = "";
+
+          if (pendingLearnPairs.length === 0) {
+            learnModalDesc.textContent = "No word replacements detected yet between the scanned text and your current edits. Edit any misread Hebrew word in the editor first, or click 'Manage Rules' to add a rule manually.";
+            confirmLearnBtn.disabled = true;
+          } else {
+            learnModalDesc.textContent = "Select the corrections you want Ohr HaKsav to remember for future scans in this browser:";
+            confirmLearnBtn.disabled = false;
+            pendingLearnPairs.forEach(function (pair, idx) {
+              const row = document.createElement("label");
+              row.className = "rule-pair-row";
+              const cb = document.createElement("input");
+              cb.type = "checkbox";
+              cb.checked = true;
+              cb.dataset.pairIdx = String(idx);
+              const txt = document.createElement("span");
+              txt.className = "rule-pair-text";
+              txt.textContent = pair.raw_text + "  ←  " + pair.corrected_text;
+              row.appendChild(cb);
+              row.appendChild(txt);
+              learnPairsList.appendChild(row);
+            });
+          }
+          learnModalBackdrop.classList.remove("hidden");
+        } catch (e) {
+          showToast("Failed to extract rules from edits.");
+        } finally {
+          learnBtn.disabled = false;
+        }
+      });
+
+      function closeLearn() { learnModalBackdrop.classList.add("hidden"); }
+      closeLearnModal.addEventListener("click", closeLearn);
+      cancelLearnBtn.addEventListener("click", closeLearn);
+      learnManageBtn.addEventListener("click", function () {
+        closeLearn();
+        openRulesModal();
+      });
+
+      confirmLearnBtn.addEventListener("click", function () {
+        const checked = [];
+        learnPairsList.querySelectorAll("input[type='checkbox']").forEach(function (cb) {
+          if (cb.checked) {
+            const pair = pendingLearnPairs[Number(cb.dataset.pairIdx)];
+            if (pair) checked.push(pair);
+          }
+        });
+        if (checked.length > 0) {
+          const count = upsertUserRules(checked);
+          if (scannedPages[activePageIdx]) {
+            scannedPages[activePageIdx].initialText = scannedPages[activePageIdx].text;
+          }
+          showToast("Learned " + count + " rule(s) in your browser!");
+        }
+        closeLearn();
+      });
+
+      // Manage Rules modal
+      function renderRulesTable() {
+        const filter = (rulesSearchInput.value || "").trim().toLowerCase();
+        const rules = loadUserRules();
+        rulesTableBody.innerHTML = "";
+        const filtered = rules.filter(function (r) {
+          if (!filter) return true;
+          return (r.raw_text || "").toLowerCase().includes(filter) ||
+                 (r.corrected_text || "").toLowerCase().includes(filter);
+        });
+
+        if (filtered.length === 0) {
+          const tr = document.createElement("tr");
+          const td = document.createElement("td");
+          td.colSpan = 4;
+          td.style.textAlign = "center";
+          td.style.color = "var(--text-muted)";
+          td.style.padding = "18px";
+          td.textContent = rules.length === 0
+            ? "No personal rules saved yet. Built-in Yeshiva abbreviations are already active automatically."
+            : "No matching rules found.";
+          tr.appendChild(td);
+          rulesTableBody.appendChild(tr);
+          return;
+        }
+
+        filtered.forEach(function (rule) {
+          const origIdx = rules.indexOf(rule);
+          const tr = document.createElement("tr");
+
+          const tdRaw = document.createElement("td");
+          tdRaw.className = "he";
+          tdRaw.textContent = rule.raw_text;
+
+          const tdCorr = document.createElement("td");
+          tdCorr.className = "he";
+          tdCorr.textContent = rule.corrected_text;
+
+          const tdActive = document.createElement("td");
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = rule.is_active !== false;
+          cb.addEventListener("change", function () {
+            const all = loadUserRules();
+            if (all[origIdx]) {
+              all[origIdx].is_active = cb.checked;
+              saveUserRules(all);
+            }
+          });
+          tdActive.appendChild(cb);
+
+          const tdAct = document.createElement("td");
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.className = "btn btn-danger-soft btn-sm";
+          delBtn.textContent = "Delete";
+          delBtn.addEventListener("click", function () {
+            const all = loadUserRules();
+            all.splice(origIdx, 1);
+            saveUserRules(all);
+            renderRulesTable();
+          });
+          tdAct.appendChild(delBtn);
+
+          tr.appendChild(tdRaw);
+          tr.appendChild(tdCorr);
+          tr.appendChild(tdActive);
+          tr.appendChild(tdAct);
+          rulesTableBody.appendChild(tr);
+        });
+      }
+
+      function openRulesModal() {
+        renderRulesTable();
+        rulesModalBackdrop.classList.remove("hidden");
+      }
+      function closeRules() { rulesModalBackdrop.classList.add("hidden"); }
+
+      openRulesBtn.addEventListener("click", openRulesModal);
+      closeRulesModal.addEventListener("click", closeRules);
+      doneRulesBtn.addEventListener("click", closeRules);
+      rulesSearchInput.addEventListener("input", renderRulesTable);
+
+      addManualRuleBtn.addEventListener("click", function () {
+        const raw = (newRuleRaw.value || "").trim();
+        const corr = (newRuleCorr.value || "").trim();
+        if (!raw || !corr || raw === corr) {
+          showToast("Enter both the misread word and its different correction.");
+          return;
+        }
+        upsertUserRules([{ raw_text: raw, corrected_text: corr }]);
+        newRuleRaw.value = "";
+        newRuleCorr.value = "";
+        renderRulesTable();
+        showToast("Rule added.");
+      });
+
+      exportRulesBtn.addEventListener("click", function () {
+        const rules = loadUserRules();
+        const blob = new Blob([JSON.stringify(rules, null, 2)], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "OhrHaKsav_Rules.json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      });
+
+      importRulesBtn.addEventListener("click", function () { importRulesInput.click(); });
+      importRulesInput.addEventListener("change", async function () {
+        const f = importRulesInput.files && importRulesInput.files[0];
+        importRulesInput.value = "";
+        if (!f) return;
+        try {
+          const text = await f.text();
+          const parsed = JSON.parse(text);
+          if (!Array.isArray(parsed)) throw new Error("Invalid JSON array");
+          const count = upsertUserRules(parsed);
+          renderRulesTable();
+          showToast("Imported " + count + " rule(s).");
+        } catch (e) {
+          showToast("Could not import JSON rules file.");
+        }
+      });
+
+      clearAllRulesBtn.addEventListener("click", function () {
+        if (!loadUserRules().length) return;
+        if (!window.confirm("Remove all browser-saved rules?")) return;
+        saveUserRules([]);
+        renderRulesTable();
+      });
+
+      // Export to Word Modal
+      openExportBtn.addEventListener("click", function () {
+        if (!scannedPages.length) return;
+        exportModalBackdrop.classList.remove("hidden");
+      });
+      function closeExport() { exportModalBackdrop.classList.add("hidden"); }
+      closeExportModal.addEventListener("click", closeExport);
+      cancelExportBtn.addEventListener("click", closeExport);
+
+      confirmExportBtn.addEventListener("click", async function () {
+        if (!scannedPages.length) return;
+        confirmExportBtn.disabled = true;
+        confirmExportBtn.textContent = "Generating .docx...";
+        try {
+          const payload = {
+            pages: scannedPages.map(function (pg, idx) {
+              return {
+                page_num: idx + 1,
+                title: pg.title || ("עמוד " + (idx + 1)),
+                text: pg.text || "",
+                date: ""
+              };
+            }),
+            document_title: expDocTitle.value || "שיעורי תורה וחידושים",
+            document_subtitle: expDocSubtitle.value || "",
+            author_name: expAuthor.value || "",
+            font_name: expFont.value || "David",
+            layout_mode: expLayout.value || "standard",
+            include_page_headers: Boolean(expIncludeHeaders.checked)
+          };
+          const res = await fetch("/api/ocr/export-docx", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) throw new Error("Export failed (" + res.status + ")");
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "OhrHaKsav_Notes.docx";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          closeExport();
+          showToast("Word document downloaded.");
+        } catch (e) {
+          showToast(e && e.message ? e.message : "Failed to export Word document.");
+        } finally {
+          confirmExportBtn.disabled = false;
+          confirmExportBtn.textContent = "Download .docx";
+        }
+      });
+
+      updateRulesBadge();
+    })();
+  </script>
+</body>
+</html>
